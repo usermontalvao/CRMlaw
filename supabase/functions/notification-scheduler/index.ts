@@ -9,6 +9,10 @@ import {
   primeiroNome,
   deveLembrarDoPrazo,
   deveCobrarPrazoVencido,
+  diaDeHoje,
+  diasDeAtraso,
+  diasParaVencer,
+  inicioDoDia,
   telefoneInternacional,
   telefoneLegivel,
   templateDaNotificacao,
@@ -465,12 +469,19 @@ async function checkDeadlineReminders(
   const windowEnd = new Date(now);
   windowEnd.setDate(windowEnd.getDate() + 180);
 
+  // O CORTE É O DIA, NÃO O INSTANTE. `due_date` guarda a meia-noite UTC do dia
+  // do vencimento, então `due_date >= now` deixava de fora, o dia inteiro,
+  // justamente o prazo que vence HOJE — ele só era visto pela varredura de
+  // vencidos, que o chamava de vencido. Ver `diasDeAtraso`.
+  const hoje = diaDeHoje(now);
+  const comecoDeHoje = inicioDoDia(hoje);
+
   const { data: deadlines, error } = await supabase
     .from("deadlines")
     .select("id, title, due_date, status, priority, notify_days_before, process_id, requirement_id, responsible_id, client_id, clients(full_name), processes(process_code)")
     .eq("status", "pendente")
     .or(SOMENTE_VISIVEIS(now.toISOString()))
-    .gte("due_date", now.toISOString())
+    .gte("due_date", comecoDeHoje)
     .lte("due_date", windowEnd.toISOString());
 
   if (error) {
@@ -487,7 +498,10 @@ async function checkDeadlineReminders(
 
   for (const deadline of deadlines || []) {
     const dueDate = new Date(deadline.due_date);
-    const daysUntilDue = Math.ceil((dueDate.getTime() - now.getTime()) / (1000 * 60 * 60 * 24));
+    // Dias de CALENDÁRIO, no fuso do escritório: 0 é "vence hoje". A conta em
+    // milissegundos que estava aqui virava −1 às 20:00 de Cuiabá (00:00 UTC do
+    // dia seguinte) e antecipava o vencimento em quatro horas.
+    const daysUntilDue = diasParaVencer(deadline.due_date, now) ?? 0;
     const notifyDaysBeforeRaw = deadline.notify_days_before;
     const notifyDaysBefore =
       typeof notifyDaysBeforeRaw === 'number'
@@ -496,9 +510,10 @@ async function checkDeadlineReminders(
           ? Number(notifyDaysBeforeRaw)
           : null;
 
-    // UMA VEZ SÓ, no dia exato que o prazo pede. Era `>`, e por isso o aviso
-    // saía todo dia desde "avisar N antes" até o vencimento — três lembretes
-    // por prazo, vezes três canais. Ver `deveLembrarDoPrazo`.
+    // UMA VEZ SÓ, no dia exato que o prazo pede — mais o dia do vencimento,
+    // que avisa sempre. Era `>`, e por isso o aviso saía todo dia desde
+    // "avisar N antes" até o vencimento — três lembretes por prazo, vezes três
+    // canais. Ver `deveLembrarDoPrazo`.
     if (!deveLembrarDoPrazo(daysUntilDue, notifyDaysBefore)) continue;
 
     // Notificar apenas o responsável; sem responsável → pula
@@ -641,7 +656,10 @@ async function checkOverdueDeadlines(
   console.log("🚨 Verificando prazos vencidos...");
 
   const now = new Date();
-  const today = now.toISOString().slice(0, 10);
+  // O dia é o do ESCRITÓRIO, não o de UTC. Como chave de dedupe isso importa:
+  // entre 20:00 e 00:00 de Cuiabá o `toISOString()` já virava o dia seguinte e
+  // abria uma segunda janela de cobrança na mesma noite.
+  const today = diaDeHoje(now);
 
   const { data: deadlines, error } = await supabase
     .from("deadlines")
@@ -654,7 +672,12 @@ async function checkOverdueDeadlines(
     // o erro aqui vira cobrança diária de um prazo que ninguém mais enxerga.
     .is("deleted_at", null)
     .or(SOMENTE_VISIVEIS(now.toISOString()))
-    .lt("due_date", now.toISOString());
+    // SE VENCE HOJE, NÃO ESTÁ VENCIDO. `due_date < now` trazia para cá o prazo
+    // do próprio dia (a meia-noite UTC dele já passou às 20:00 da véspera em
+    // Cuiabá), e era isso que mandava "Prazo vencido" com "Vence hoje!" no
+    // corpo do mesmo e-mail. O corte agora é o começo do dia de hoje: só entra
+    // o que venceu ONTEM ou antes. Quem avisa hoje é `checkDeadlineReminders`.
+    .lt("due_date", inicioDoDia(today));
 
   if (error) {
     console.error("Erro ao buscar prazos vencidos:", error);
@@ -685,13 +708,15 @@ async function checkOverdueDeadlines(
     const outrosDaAdministracao = admins.filter((a) => a.profileId !== deadline.responsible_id);
 
     const dueDate = new Date(deadline.due_date);
-    const daysOverdue = Math.floor((now.getTime() - dueDate.getTime()) / (1000 * 60 * 60 * 24));
+    // Dias de calendário: 1 no primeiro dia de atraso. A consulta acima já
+    // barrou o 0, que é o dia do vencimento.
+    const daysOverdue = diasDeAtraso(deadline.due_date, now) ?? 0;
 
     // A COBRANÇA TEM FIM. Antes esta varredura cobrava todo dia, para sempre,
     // até alguém marcar o prazo como concluído — um prazo esquecido rendia dois
     // ou três avisos por dia indefinidamente, e foi a maior fonte de ruído que
-    // a medição encontrou. Agora sai no dia do vencimento e mais uma vez três
-    // dias depois. Ver `deveCobrarPrazoVencido`.
+    // a medição encontrou. Agora sai no primeiro dia de atraso e mais uma vez
+    // no terceiro. Ver `deveCobrarPrazoVencido`.
     //
     // O prazo NÃO some por isso: ele continua pendente, no painel e na lista.
     // O que acaba é a repetição diária no telefone de alguém.
@@ -772,7 +797,7 @@ async function checkOverdueDeadlines(
             responsavel: perfil.nome,
             titulo: deadline.title ?? "",
             vencimento: dueDate.toLocaleDateString("pt-BR"),
-            quando: daysOverdue <= 0 ? "hoje" : daysOverdue === 1 ? "ontem" : `há ${daysOverdue} dias`,
+            quando: daysOverdue === 1 ? "ontem" : `há ${daysOverdue} dias`,
             cliente: clientName,
             processo: (deadline as any).processes?.process_code ?? "",
           },
@@ -793,7 +818,7 @@ async function checkOverdueDeadlines(
     if (admin.whatsapp) {
       for (const adm of outrosDaAdministracao) {
         const telefoneResp = perfis.get(deadline.responsible_id)?.telefone ?? "";
-        const quando = daysOverdue <= 0 ? "hoje" : daysOverdue === 1 ? "ontem" : `há ${daysOverdue} dias`;
+        const quando = daysOverdue === 1 ? "ontem" : `há ${daysOverdue} dias`;
         const cobranca = [
           `Olá${responsavelNome ? `, ${primeiroNome(responsavelNome)}` : ""}!`,
           `O prazo "${deadline.title ?? ""}" venceu ${quando} (${dueDate.toLocaleDateString("pt-BR")})`
@@ -992,7 +1017,9 @@ async function checkPendingAssignmentNotices(
     if (!responsibleUserId) continue;
 
     const dueDate = new Date(deadline.due_date);
-    const daysUntilDue = Math.ceil((dueDate.getTime() - Date.now()) / 86400000);
+    // Mesma conta de calendário do lembrete: sem ela, um prazo que vence hoje
+    // entrava na fila às 20:00 de Cuiabá já rotulado "Vencido!".
+    const daysUntilDue = diasParaVencer(deadline.due_date, new Date()) ?? 0;
     const isUrgent = daysUntilDue <= 3 || deadline.priority === "urgente" || deadline.priority === "alta";
     const typeLabel = typeLabels[deadline.type] || "Prazo";
     const priorityLabel = priorityLabels[deadline.priority] || "";

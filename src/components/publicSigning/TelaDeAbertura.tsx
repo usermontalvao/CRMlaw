@@ -48,7 +48,15 @@ const TelaDeAbertura: React.FC<{
    * antes ou depois da hora. Este sinal vem de quem sabe: o carregamento.
    */
   pronto?: boolean;
-}> = ({ docName, allDocNames, signerName, pronto }) => {
+  /**
+   * A espera passou de qualquer limite razoável e nada garante que ela vá
+   * terminar. Vira uma saída — nunca um diagnóstico: a tela não sabe se o
+   * problema é a rede, o arquivo ou o aparelho, e não vai fingir que sabe.
+   */
+  travado?: boolean;
+  /** O que fazer quando `travado`. Sem isto, o socorro não aparece. */
+  onRecarregar?: () => void;
+}> = ({ docName, allDocNames, signerName, pronto, travado, onRecarregar }) => {
   const [decorrido, setDecorrido] = useState(0);
   const montadoEm = useRef(Date.now());
 
@@ -145,6 +153,35 @@ const TelaDeAbertura: React.FC<{
             {pronto ? 'Pronto para assinar.' : faseDaAbertura(decorrido)}
           </p>
         </div>
+
+        {/*
+          A SAÍDA.
+
+          Antes daqui a cortina era uma sala sem porta: se o documento nunca
+          terminasse de montar, ela girava a roda para sempre — e quem estava do
+          outro lado só tinha a opção de fechar e desistir de assinar. Aparece
+          tarde de propósito: oferecer "recarregar" cedo ensina a recarregar por
+          impaciência, e aí sim a espera nunca acaba.
+        */}
+        {travado && !pronto && onRecarregar && (
+          <div style={{ marginTop: 22, ...sobe(9) }}>
+            <p style={{ margin: 0, fontSize: 12, lineHeight: 1.45, color: TINTA_2, maxWidth: 260 }}>
+              Está demorando mais do que deveria. Abrir de novo costuma resolver —
+              e você não perde nada.
+            </p>
+            <button
+              onClick={onRecarregar}
+              style={{
+                marginTop: 11, minHeight: 42, padding: '0 18px', borderRadius: 999,
+                border: '1px solid #e2e8f0', background: '#fff', cursor: 'pointer',
+                fontSize: 13, fontWeight: 700, color: '#ea580c',
+                WebkitTapHighlightColor: 'transparent',
+              }}
+            >
+              Abrir de novo
+            </button>
+          </div>
+        )}
       </div>
     </MolduraPublica>
   );

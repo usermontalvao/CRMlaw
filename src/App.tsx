@@ -3,6 +3,10 @@ import { createPortal } from 'react-dom';
 import { useNavigation } from './contexts/NavigationContext';
 import type { ModuleName } from './contexts/NavigationContext';
 import { isStandaloneModuleSearch, moduleToStandalonePath } from './utils/moduleRoutes';
+/* Fronteira de erro da assinatura pública. NÃO é `lazy`: uma rede de segurança
+   que também precisa ser baixada não pega a queda do download. Ver o cabeçalho
+   do arquivo — é o conserto da tela branca. */
+import { RedeDeSeguranca } from './components/publicSigning/RedeDeSeguranca';
 import {
   Users,
   Cloud,
@@ -2129,9 +2133,11 @@ useEffect(() => {
       let token = _hash.split('/assinar/')[1]?.split('?')[0]?.split('#')[0];
       if (!token && _path.includes('/assinar/')) token = _path.split('/assinar/')[1]?.split('?')[0]?.split('#')[0];
       if (token) return (
-        <Suspense fallback={<div className="min-h-screen flex items-center justify-center"><Loader2 className="w-8 h-8 animate-spin text-blue-600" /></div>}>
-          <PublicSigningPage token={token} />
-        </Suspense>
+        <RedeDeSeguranca token={token} onde="assinatura (visitante)">
+          <Suspense fallback={<div className="min-h-screen flex items-center justify-center"><Loader2 className="w-8 h-8 animate-spin text-blue-600" /></div>}>
+            <PublicSigningPage token={token} />
+          </Suspense>
+        </RedeDeSeguranca>
       );
     }
 
@@ -3352,9 +3358,11 @@ const App: React.FC = () => {
     }
     if (token) {
       return (
-        <Suspense fallback={<div className="min-h-screen bg-slate-100 flex items-center justify-center"><Loader2 className="w-8 h-8 animate-spin text-blue-600" /></div>}>
-          <PublicSigningPage token={token} />
-        </Suspense>
+        <RedeDeSeguranca token={token} onde="assinatura">
+          <Suspense fallback={<div className="min-h-screen bg-slate-100 flex items-center justify-center"><Loader2 className="w-8 h-8 animate-spin text-blue-600" /></div>}>
+            <PublicSigningPage token={token} />
+          </Suspense>
+        </RedeDeSeguranca>
       );
     }
   }

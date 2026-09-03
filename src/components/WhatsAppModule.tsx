@@ -1297,6 +1297,46 @@ const WhatsAppModule: React.FC<WhatsAppModuleProps> = ({ openConversationId, ope
     return () => window.clearTimeout(id);
   }, [composerOverlayOpen, selectedId, rawIsMobile]);
 
+  /**
+   * RESPONDER JÁ DEIXA O CURSOR NO CAMPO.
+   *
+   * Escolher "Responder" no menu da mensagem montava a tarja de citação e
+   * parava aí: o foco continuava onde estava (no menu, que fecha, e daí no
+   * `body`), e o atendente tinha de clicar no campo antes de escrever — um
+   * clique a mais em cima da ação mais repetida do módulo. Vale o mesmo para
+   * "Editar", que ainda por cima já chega com texto escrito.
+   *
+   * A chave do efeito é o ID da mensagem citada: trocar de citação foca de
+   * novo, e um render qualquer não mexe no cursor de quem já está digitando.
+   *
+   * Aqui NÃO há a trava de `rawIsMobile` que os dois efeitos acima têm. Eles
+   * reagem a coisas que acontecem sozinhas (abrir conversa, fechar anexo), e no
+   * telefone subir o teclado sem pedir come metade da tela. Este reage a um
+   * toque explícito em "Responder" — subir o teclado É o que foi pedido, e é o
+   * que o WhatsApp faz.
+   *
+   * O cursor vai para o FIM do texto: na edição o rascunho já vem preenchido, e
+   * cair no começo faria a primeira letra digitada entrar antes da frase.
+   */
+  // A modalidade entra na chave junto com o ID: citar a mensagem A e logo
+  // depois EDITAR a mesma mensagem A são dois pedidos diferentes, e só o ID os
+  // deixaria iguais.
+  const alvoDoComposer = editing ? `edit:${editing.id}` : replyTo ? `reply:${replyTo.id}` : null;
+  useEffect(() => {
+    if (!alvoDoComposer || !selectedId) return;
+    if (conversationsRef.current.find(c => c.id === selectedId)?.is_blocked) return;
+    // Espera a tarja de citação entrar: ela empurra o campo para baixo, e focar
+    // antes faz o navegador rolar a thread para o lugar errado.
+    const id = window.setTimeout(() => {
+      const el = draftRef.current;
+      if (!el) return;
+      el.focus({ preventScroll: true });
+      const fim = el.value.length;
+      el.setSelectionRange(fim, fim);
+    }, 0);
+    return () => window.clearTimeout(id);
+  }, [alvoDoComposer, selectedId]);
+
   // Marca como lida ao abrir a conversa E a cada mensagem que chega com ela
   // aberta. A segunda metade é o que faltava: o contador de não-lidas vem do
   // banco pelo realtime, então cada mensagem recebida somava no badge da própria

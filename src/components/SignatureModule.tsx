@@ -37,6 +37,7 @@ import { useMinLoading } from '../hooks/useMinLoading';
 import { useSelectionState } from '../hooks/useSelectionState';
 import FacialCapture from './FacialCapture';
 import { filterGeneratedDocumentsByFolder, filterSignatureRequests, isGlobalSignatureSearch } from '../utils/signatureFilters';
+import { lerBuscaDeAssinatura } from '../utils/buscaDeAssinatura';
 import type {
   SignatureRequest, SignatureRequestWithSigners, Signer, CreateSignatureRequestDTO,
   SignerAuthMethod, SignatureFieldType, SignatureAuditLog, SignatureRequestDocument,
@@ -1033,6 +1034,15 @@ const SignatureModule: React.FC<SignatureModuleProps> = ({ prefillData, focusReq
 
   // Pesquisa é global: com termo digitado, ignora a caixa aberta e varre todas as pastas.
   const isGlobalSearch = useMemo(() => isGlobalSignatureSearch(searchTerm), [searchTerm]);
+
+  /*
+    O que foi digitado — token, CPF/telefone ou texto.
+
+    Serve para DIZER ao operador o que está acontecendo: colar um UUID de
+    trinta e seis caracteres e ver a lista esvaziar não distingue "não existe"
+    de "a busca não entende isso". A etiqueta no campo remove essa dúvida.
+  */
+  const buscaLida = useMemo(() => lerBuscaDeAssinatura(searchTerm), [searchTerm]);
 
   const filteredRequestsByFolder = useMemo(() => {
     if (isGlobalSearch) return filteredRequests;
@@ -4753,11 +4763,19 @@ const SignatureModule: React.FC<SignatureModuleProps> = ({ prefillData, focusReq
                 <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-slate-400 pointer-events-none" />
                 <input
                   type="text"
-                  placeholder="Buscar em todas as pastas..."
+                  placeholder="Documento, cliente, signatário, CPF ou o código do link..."
                   value={searchTerm}
                   onChange={(e) => setSearchTerm(e.target.value)}
-                  className="w-full rounded-lg border border-[#e7e5df] bg-slate-50 pl-8 pr-3 py-1.5 text-xs text-slate-900 placeholder:text-slate-400 transition focus:bg-white focus:border-slate-300 focus:outline-none focus:ring-2 focus:ring-orange-500/10"
+                  title="Aceita o link inteiro da assinatura: cole a mensagem que o signatário recebeu."
+                  className={`w-full rounded-lg border border-[#e7e5df] bg-slate-50 pl-8 py-1.5 text-xs text-slate-900 placeholder:text-slate-400 transition focus:bg-white focus:border-slate-300 focus:outline-none focus:ring-2 focus:ring-orange-500/10 ${buscaLida.tipo === 'token' ? 'pr-[6.5rem]' : buscaLida.tipo === 'digitos' ? 'pr-[4.5rem]' : 'pr-3'}`}
                 />
+                {/* A etiqueta do que a busca entendeu. Só aparece quando o termo
+                    NÃO é texto comum — no texto comum não há o que explicar. */}
+                {(buscaLida.tipo === 'token' || buscaLida.tipo === 'digitos') && (
+                  <span className="pointer-events-none absolute right-2 top-1/2 -translate-y-1/2 rounded-md bg-orange-50 px-1.5 py-0.5 text-[10px] font-semibold text-orange-700">
+                    {buscaLida.tipo === 'token' ? 'código do link' : 'CPF / telefone'}
+                  </span>
+                )}
               </div>
 
               {/* Separador */}

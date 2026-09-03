@@ -36,6 +36,76 @@ function formatDate(dateStr: string): string {
   });
 }
 
+// ── QUANTOS DIAS FALTAM — em dias de calendário ─────────────────────────────
+//
+// `due_date` é timestamptz, mas o que está gravado ali é DIA: a meia-noite UTC
+// do dia do vencimento. A conta em milissegundos que estava aqui virava −1 às
+// 20:00 de Cuiabá (00:00 UTC do dia seguinte), e o `mode` vinha de quem chamou.
+// Foi essa dupla que produziu o e-mail relatado pelo escritório: título "Prazo
+// vencido" com "Vence hoje!" duas linhas abaixo, no mesmo e-mail.
+//
+// Agora o título é DERIVADO da data, não do `mode`: mesmo que alguém chame esta
+// função com `mode: 'overdue'` para um prazo que vence hoje, ela não vai chamar
+// de vencido o que ainda não venceu.
+//
+// Cópia local por decisão, não por esquecimento: a regra canônica está em
+// `_shared/notificacao-whatsapp.ts` (`diasParaVencer`), e importá-la faria esta
+// função — que hoje sobe sozinha — passar a depender de deploy multiarquivo.
+const FUSO_DO_ESCRITORIO = 'America/Cuiaba';
+
+function diasParaVencer(vencimento: string, agora: Date = new Date()): number {
+  const dia = String(vencimento).slice(0, 10);
+  const hoje = new Intl.DateTimeFormat('en-CA', {
+    timeZone: FUSO_DO_ESCRITORIO,
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+  }).format(agora);
+  const emMs = (d: string) => {
+    const [ano, mes, dd] = d.split('-').map(Number);
+    return Date.UTC(ano, mes - 1, dd);
+  };
+  const dif = Math.round((emMs(dia) - emMs(hoje)) / 86400000);
+  return Number.isFinite(dif) ? dif : 0;
+}
+
+/**
+ * O rótulo do e-mail sai da DATA; o `mode` só escolhe entre "novo prazo" e
+ * "lembrete" quando o prazo ainda tem dias pela frente.
+ */
+function situacaoDoPrazo(mode: 'assigned' | 'reminder' | 'overdue', faltam: number) {
+  if (faltam < 0) {
+    return {
+      eyebrow: 'Prazo Vencido',
+      headerTitle: 'Prazo vencido',
+      assunto: 'Prazo vencido - Jurius',
+      texto: 'Prazo vencido',
+    };
+  }
+  if (faltam === 0) {
+    return {
+      eyebrow: 'Vence Hoje',
+      headerTitle: 'Prazo vence hoje',
+      assunto: 'Prazo vence hoje - Jurius',
+      texto: 'Prazo vence hoje',
+    };
+  }
+  if (mode === 'reminder' || mode === 'overdue') {
+    return {
+      eyebrow: 'Lembrete de Prazo',
+      headerTitle: 'Lembrete de prazo',
+      assunto: 'Lembrete de prazo - Jurius',
+      texto: 'Lembrete de prazo',
+    };
+  }
+  return {
+    eyebrow: 'Notificação de Prazo',
+    headerTitle: 'Novo prazo atribuído',
+    assunto: 'Novo prazo cadastrado - Jurius',
+    texto: 'Novo prazo cadastrado',
+  };
+}
+
 function getPriorityLabel(priority: string): string {
   return ({
     urgente: 'Urgente',
@@ -78,7 +148,7 @@ function buildDeadlineEmailHtml(data: {
   const priorityLabel = getPriorityLabel(data.priority);
   const typeLabel = getTypeLabel(data.type);
   const dueDateFormatted = formatDate(data.dueDate);
-  const daysDiff = Math.ceil((new Date(data.dueDate).getTime() - Date.now()) / 86400000);
+  const daysDiff = diasParaVencer(data.dueDate);
 
   let daysText = '';
   let daysColor = '#1E8A5B';
@@ -100,17 +170,25 @@ function buildDeadlineEmailHtml(data: {
   }
 
   const isReminder = data.mode === 'reminder';
-  const isOverdue = data.mode === 'overdue';
+  const isOverdue = daysDiff < 0;
+  const venceHoje = daysDiff === 0;
   const selfAssigned = data.assignedByName === data.responsibleName;
 
-  const eyebrow = isOverdue ? 'Prazo Vencido' : isReminder ? 'Lembrete de Prazo' : 'Notificação de Prazo';
-  const headerTitle = isOverdue ? 'Prazo vencido' : isReminder ? 'Lembrete de prazo' : 'Novo prazo atribuído';
+  const { eyebrow, headerTitle } = situacaoDoPrazo(data.mode, daysDiff);
 
-  const greeting = isReminder
-    ? `Olá, <strong style="color:#16213A;">${data.responsibleName}</strong>. Este é um lembrete sobre o prazo abaixo. Confira os detalhes.`
-    : selfAssigned
-      ? `Olá, <strong style="color:#16213A;">${data.responsibleName}</strong>. Um novo prazo foi cadastrado e atribuído a você. Confira os detalhes abaixo.`
-      : `Olá, <strong style="color:#16213A;">${data.responsibleName}</strong>. <strong style="color:#16213A;">${data.assignedByName}</strong> atribuiu um novo prazo para você. Confira os detalhes abaixo.`;
+  // O e-mail de VENCIDO chegava com a saudação de atribuição ("Fulano atribuiu
+  // um novo prazo para você") porque nenhum dos dois ramos abaixo era dele. O
+  // prazo vencido e o que vence hoje agora falam do que aconteceu com ELES.
+  const nome = `<strong style="color:#16213A;">${data.responsibleName}</strong>`;
+  const greeting = isOverdue
+    ? `Olá, ${nome}. O prazo abaixo venceu e continua pendente no sistema. Confira os detalhes.`
+    : venceHoje
+      ? `Olá, ${nome}. O prazo abaixo vence HOJE e ainda está pendente. Confira os detalhes.`
+      : isReminder
+        ? `Olá, ${nome}. Este é um lembrete sobre o prazo abaixo. Confira os detalhes.`
+        : selfAssigned
+          ? `Olá, ${nome}. Um novo prazo foi cadastrado e atribuído a você. Confira os detalhes abaixo.`
+          : `Olá, ${nome}. <strong style="color:#16213A;">${data.assignedByName}</strong> atribuiu um novo prazo para você. Confira os detalhes abaixo.`;
 
   const descriptionHtml = data.description
     ? `<tr><td colspan="2" style="padding-top:16px;padding-bottom:4px;"><p style="margin:0;font-family:Arial,Helvetica,sans-serif;font-size:13px;color:#54607A;line-height:1.6;border-left:3px solid #F5762B;padding-left:12px;">${data.description}</p></td></tr>`
@@ -325,7 +403,8 @@ async function sendDeadlineEmail(
       ? 'deadline_due'
       : 'deadline_assigned';
   const customTemplate = await loadEmailTemplate(supabase, trigger);
-  const daysUntil = Math.ceil((new Date(deadline.due_date).getTime() - Date.now()) / 86400000);
+  const daysUntil = diasParaVencer(deadline.due_date);
+  const situacao = situacaoDoPrazo(mode, daysUntil);
 
   let emailHtml: string;
   let subjectLine: string;
@@ -344,11 +423,7 @@ async function sendDeadlineEmail(
     emailHtml = rawHtml.split('\n').map((line: string) => line.trimEnd()).join('\n');
     subjectLine = customTemplate.subject
       ? applyTemplateVars(customTemplate.subject, vars)
-      : mode === 'overdue'
-        ? 'Prazo vencido - Jurius'
-        : mode === 'reminder'
-          ? 'Lembrete de prazo - Jurius'
-          : 'Novo prazo cadastrado - Jurius';
+      : situacao.assunto;
   } else {
     const rawHtml = buildDeadlineEmailHtml({
       responsibleName: responsible.name,
@@ -363,11 +438,7 @@ async function sendDeadlineEmail(
       mode,
     });
     emailHtml = rawHtml.split('\n').map((line: string) => line.trimEnd()).join('\n');
-    subjectLine = mode === 'overdue'
-      ? 'Prazo vencido - Jurius'
-      : mode === 'reminder'
-        ? 'Lembrete de prazo - Jurius'
-        : 'Novo prazo cadastrado - Jurius';
+    subjectLine = situacao.assunto;
   }
 
   console.log(`Enviando email (${mode}) para ${recipientEmail}`);
@@ -406,7 +477,7 @@ async function sendDeadlineEmail(
       reply_to: REPLY_TO,
       subject: subjectLine,
       html: emailHtml,
-      text: `${mode === 'overdue' ? 'Prazo vencido' : mode === 'reminder' ? 'Lembrete de prazo' : 'Novo prazo cadastrado'}: ${deadline.title} - Vencimento: ${formatDate(deadline.due_date)}`,
+      text: `${situacao.texto}: ${deadline.title} - Vencimento: ${formatDate(deadline.due_date)}`,
     }),
   });
 

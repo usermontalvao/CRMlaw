@@ -953,6 +953,27 @@ const PublicSigningPage: React.FC<PublicSigningPageProps> = ({ token }) => {
     };
   }, [isFullyLoaded, overlayVisible, overlayFading]);
 
+  /**
+   * A ESPERA QUE NÃO TERMINA.
+   *
+   * A cortina de abertura só saía por `isFullyLoaded`. Se o documento principal
+   * nunca confirmasse o render — docx-preview que pendura, download que morre
+   * no meio, aparelho que não dá conta do arquivo — ela girava a roda PARA
+   * SEMPRE, e a única saída de quem estava do outro lado era fechar a aba e
+   * desistir de assinar.
+   *
+   * Trinta e dois segundos é tarde de propósito: `faseDaAbertura` ainda está
+   * dizendo que o download demora, e oferecer "recarregar" antes disso ensina a
+   * recarregar por impaciência — o que transforma uma espera longa em espera
+   * eterna, porque cada recarga recomeça o download do zero.
+   */
+  const [esperaTravada, setEsperaTravada] = useState(false);
+  useEffect(() => {
+    if (isFullyLoaded) { setEsperaTravada(false); return; }
+    const t = window.setTimeout(() => setEsperaTravada(true), 32_000);
+    return () => window.clearTimeout(t);
+  }, [isFullyLoaded]);
+
   // Prazo-limite: libera o requisito de "todos os anexos renderizados" após 18 s.
   // Cobre o caso comum de um anexo DOCX que não confirma o render (overlay preso
   // no ~96%). O documento principal continua sendo exigido para habilitar assinar.
@@ -3573,6 +3594,8 @@ const PublicSigningPage: React.FC<PublicSigningPageProps> = ({ token }) => {
             docName={request?.document_name}
             signerName={signer?.name}
             pronto={isFullyLoaded}
+            travado={esperaTravada}
+            onRecarregar={() => window.location.reload()}
             allDocNames={request ? [
               request.document_name,
               ...((request as any).attachment_paths as string[] | null | undefined ?? [])
@@ -4059,17 +4082,18 @@ const PublicSigningPage: React.FC<PublicSigningPageProps> = ({ token }) => {
     !loading;
 
   /*
-    O NOME DO DOCUMENTO, escrito uma vez e usado nos dois lugares.
+    O NOME DO DOCUMENTO — uma linha só, no celular e no monitor.
 
-    No celular ele é a segunda linha do cabeçalho. No desktop essa segunda
-    linha era uma faixa branca inteira ocupada por 13 px de texto — e o
-    cabeçalho todo virava um fio de nada acima de uma folha solta no meio de
-    um mar cinza. Lá ele entra na MESMA linha da marca.
+    Ele já foi a SEGUNDA faixa do cabeçalho no celular: marca numa linha,
+    documento na outra, 88 px de branco antes de o contrato começar, numa tela
+    de 640. Agora divide a linha da marca em toda largura — no celular quem
+    cede espaço é a marca (fica só o símbolo) e o botão de histórico (fica só
+    o relógio), porque o que precisa ser lido aqui é O QUE se está assinando.
   */
   const nomeDoDocumentoNoTopo = request?.document_name ? (
     <>
       <span
-        className="flex-none text-[9px] font-bold uppercase tracking-[0.18em] lg:text-[10px]"
+        className="hidden flex-none text-[9px] font-bold uppercase tracking-[0.18em] sm:block lg:text-[10px]"
         style={{ color: '#ea580c' }}
       >
         Assinar
@@ -4104,28 +4128,37 @@ const PublicSigningPage: React.FC<PublicSigningPageProps> = ({ token }) => {
 
         Marca e documento também deixaram de ser dois blocos: num celular isso
         custava duas faixas antes do PDF começar.
+
+        E a faixa encolheu de novo. Ela vinha com 88 px no celular — marca em
+        cima, documento embaixo — o que numa tela de 640 é um sétimo do papel
+        gasto em cabeçalho. Numa página cujo único trabalho é mostrar um
+        contrato e um botão, tudo aqui é imposto: agora é UMA linha de ~48 px,
+        e quem cede é a marca (só o símbolo) e o histórico (só o relógio).
       */}
       <div className="h-[2.5px] w-full flex-none" style={{ background: 'linear-gradient(90deg,#c2410c,#ea580c 60%,#f97316)' }} />
       <header
-        className="flex-none border-b bg-white px-4 pb-3 sm:px-5 lg:px-8 lg:pb-4"
-        style={{ borderColor: '#e7e5e4', paddingTop: 'max(0.7rem, env(safe-area-inset-top))' }}
+        className="flex-none border-b bg-white px-3 pb-2 sm:px-5 sm:pb-3 lg:px-8 lg:pb-4"
+        style={{ borderColor: '#e7e5e4', paddingTop: 'max(0.5rem, env(safe-area-inset-top))' }}
       >
         {/* A mesma coluna de leitura da folha: no monitor largo, marca e
             histórico param de morar em cantos opostos de 1.400 px. */}
         <div className="mx-auto w-full max-w-[1120px]">
-          <div className="flex min-w-0 items-center justify-between gap-3 lg:gap-6">
+          <div className="flex min-w-0 items-center gap-2.5 lg:gap-6">
             <div className="flex min-w-0 flex-none items-center gap-2 lg:gap-2.5">
               <BrandLogo iconOnly size="xs" />
-              <span className="text-[13px] lg:text-[15px]" style={{ fontFamily: BRAND_SERIF, fontWeight: 700, letterSpacing: '-0.012em', color: '#1A1613' }}>
+              {/* No celular o símbolo basta: a palavra custaria metade do
+                  espaço que sobra para o nome do documento. */}
+              <span className="hidden text-[13px] sm:inline lg:text-[15px]" style={{ fontFamily: BRAND_SERIF, fontWeight: 700, letterSpacing: '-0.012em', color: '#1A1613' }}>
                 {BRAND_WORDMARK.lead}
                 <span style={{ color: BRAND_DOT }}>{BRAND_WORDMARK.dot}</span>
                 <span style={{ fontWeight: 400, color: '#a8a29e' }}>{BRAND_WORDMARK.tld}</span>
               </span>
             </div>
 
-            {/* No desktop o contexto entra aqui, entre a marca e o histórico. */}
+            {/* O contexto entra aqui, entre a marca e o histórico — em toda
+                largura, inclusive no celular. */}
             {nomeDoDocumentoNoTopo && (
-              <div className="hidden min-w-0 flex-1 items-baseline gap-2.5 border-l pl-6 lg:flex" style={{ borderColor: '#ede9e6' }}>
+              <div className="flex min-w-0 flex-1 items-baseline gap-2 border-l pl-2.5 lg:gap-2.5 lg:pl-6" style={{ borderColor: '#ede9e6' }}>
                 {nomeDoDocumentoNoTopo}
               </div>
             )}
@@ -4133,40 +4166,41 @@ const PublicSigningPage: React.FC<PublicSigningPageProps> = ({ token }) => {
             <button
               type="button"
               onClick={() => setActiveTab('history')}
-              className="flex min-h-9 flex-shrink-0 items-center gap-1.5 rounded-lg border px-2.5 py-1.5 text-[11px] font-semibold transition-colors hover:bg-slate-50 lg:min-h-10 lg:gap-2 lg:rounded-xl lg:px-3.5 lg:text-[12.5px]"
+              className="flex min-h-9 flex-shrink-0 items-center gap-1.5 rounded-lg border px-2 py-1.5 text-[11px] font-semibold transition-colors hover:bg-slate-50 lg:min-h-10 lg:gap-2 lg:rounded-xl lg:px-3.5 lg:text-[12.5px]"
               style={{ borderColor: '#e2e8f0', color: TINTA_2 }}
               title="Histórico"
+              aria-label="Histórico da assinatura"
             >
-              <Clock className="h-3.5 w-3.5 lg:h-4 lg:w-4" />
-              Histórico
+              <Clock className="h-4 w-4 lg:h-4 lg:w-4" />
+              <span className="hidden sm:inline">Histórico</span>
             </button>
           </div>
-
-          {/*
-            O que está sendo assinado — em UMA linha de contexto, não em três.
-
-            O bloco trazia o rótulo, o nome do documento em duas linhas e, logo
-            abaixo, o nome do signatário. Só que os documentos do escritório
-            nascem com o nome da pessoa no título ("KIT CONSUMIDOR - PEDRO
-            RODRIGUES MONTALVAO NETO"): a terceira linha repetia, em caixa-alta,
-            o que a segunda já dizia — e as três juntas comiam um quarto da tela
-            do celular antes de o documento começar.
-
-            No desktop esta linha não existe: ela já subiu para junto da marca.
-          */}
-          {nomeDoDocumentoNoTopo && (
-            <div className="mt-2 flex min-w-0 items-baseline gap-2 lg:hidden">
-              {nomeDoDocumentoNoTopo}
-            </div>
-          )}
         </div>
       </header>
 
+      {/*
+        O PALCO DA LEITURA.
+
+        Este `relative` é o conserto do iPhone. A barra de ação flutua sobre o
+        documento — é para flutuar mesmo, com vidro e desfoque —, mas ela era
+        `position: fixed`, e no Safari do iOS um elemento fixo se ancora no
+        viewport de LAYOUT, que mantém a altura da tela SEM as barras do
+        navegador. Com a barra inferior do Safari de pé (o estado em que a
+        página abre), os últimos ~50 px desse viewport ficam ATRÁS dela — e era
+        exatamente ali que o único botão da página estava desenhado. Ninguém o
+        via.
+
+        Trocando `fixed` por `absolute` dentro deste palco, a âncora passa a
+        ser a coluna de `100dvh` — a medida do que está REALMENTE visível. O
+        botão flutua igual, e agora flutua onde dá para tocar, com a barra do
+        Safari em pé ou retraída.
+      */}
+      <div className="relative min-h-0 flex-1">
       {/* Document Viewer - Ocupa toda a tela */}
       {/* O ÚNICO scroller do leitor. `overscroll-contain` impede que o toque
           escape para a página nas bordas — no iOS é isso que dá a sensação de
           "dois scrolls brigando" ao chegar no fim do documento. */}
-      <main className="relative min-h-0 flex-1 overflow-y-auto overscroll-contain bg-[#f8fafc]">
+      <main className="absolute inset-0 overflow-y-auto overscroll-contain bg-[#f8fafc]">
         {pdfUrl ? (
           isDocx ? (
             // Renderizar DOCX com docx-preview
@@ -4214,6 +4248,140 @@ const PublicSigningPage: React.FC<PublicSigningPageProps> = ({ token }) => {
         )}
       </main>
 
+      {/*
+        A BARRA DE AÇÃO — vidro sobre o documento.
+
+        Ela flutua, e é para flutuar: o contrato continua visível por baixo,
+        desfocado, em vez de ser cortado por uma faixa branca opaca. O que
+        mudou foi a ÂNCORA, e é aí que estava o bug do iPhone.
+
+        Era `position: fixed`. No Safari do iOS um elemento fixo se ancora no
+        viewport de LAYOUT, que mantém a altura da tela SEM as barras do
+        navegador. Com a barra inferior do Safari de pé — o estado em que a
+        página abre —, os últimos ~50 px desse viewport ficam ATRÁS dela, e era
+        exatamente ali que o botão estava desenhado. O único botão da página
+        não aparecia.
+
+        Agora é `absolute` dentro do palco de leitura, que é filho da coluna de
+        `100dvh` — e `dvh` mede o que está REALMENTE visível. O botão flutua
+        igual e flutua onde dá para tocar.
+
+        O véu é feito em DUAS camadas de propósito: o desfoque sozinho teria uma
+        emenda horizontal reta atravessando o contrato. A máscara faz o vidro
+        nascer do nada no topo e ganhar corpo até o rodapé.
+
+        E o "Recusar" saiu de CIMA do "Assinar" e veio para o lado: eram duas
+        peças empilhadas, 8 rem de tela comidos por controles.
+      */}
+      {signer?.status !== 'signed' && (
+        (() => {
+          const isWaiting = !canOpenSignModal || queuedOpenSignModal;
+          const isButtonDisabled = loading || isSignModalOpen;
+          const podeRecusar =
+            signer?.status === 'pending' && !!(request as any)?.allow_refusal && !isSignModalOpen;
+
+          /*
+            O BOTÃO.
+
+            Era um disco de laranja CHAPADO com duas sombras largas e difusas
+            por baixo — de longe parecia um borrão alaranjado apoiado no
+            documento, e o `ring-white/12` que deveria dar acabamento não
+            aparecia em tela nenhuma.
+
+            Agora a peça tem volume de verdade: um degradê curto de cima para
+            baixo (a luz vem de cima, como no resto da interface), um fio de
+            branco POR DENTRO da borda superior, uma sombra curta e escura que
+            assenta a peça e uma sombra longa e difusa que a levanta do papel.
+            É a mesma receita dos botões físicos do sistema: contato + altura,
+            e não uma mancha só.
+
+            Ele ocupa a linha inteira da barra: é o único destino da página.
+          */
+          const acabamentoNormal = [
+            'bg-[linear-gradient(180deg,#fb7c3f_0%,#ea580c_54%,#d94d06_100%)]',
+            'shadow-[inset_0_1px_0_rgba(255,255,255,0.30),0_2px_5px_rgba(124,45,18,0.30),0_12px_26px_-10px_rgba(234,88,12,0.62)]',
+            'hover:shadow-[inset_0_1px_0_rgba(255,255,255,0.34),0_4px_10px_rgba(124,45,18,0.32),0_18px_34px_-12px_rgba(234,88,12,0.70)]',
+            'hover:-translate-y-[2px] active:translate-y-0 active:scale-[0.985]',
+          ].join(' ');
+
+          const buttonClass = [
+            'flex min-h-[52px] min-w-0 flex-1 items-center justify-center gap-2.5',
+            'rounded-full px-5 text-[15px] font-bold text-white',
+            'whitespace-nowrap outline-none transition-[transform,box-shadow,opacity] duration-200 ease-out',
+            'focus-visible:ring-2 focus-visible:ring-orange-400 focus-visible:ring-offset-2 focus-visible:ring-offset-[#f8fafc]',
+            'sm:min-h-[54px] sm:px-7 sm:text-[15.5px]',
+            isButtonDisabled
+              ? 'cursor-not-allowed bg-slate-300 text-slate-500 shadow-none'
+              : isWaiting
+                ? 'cursor-wait bg-[linear-gradient(180deg,#f5a077_0%,#e8794a_54%,#dc6a3a_100%)] shadow-[0_10px_22px_-12px_rgba(234,88,12,0.45)]'
+                : acabamentoNormal,
+          ].join(' ');
+
+          return (
+            <div className="pointer-events-none absolute inset-x-0 bottom-0 z-30">
+              {/* O vidro. `aria-hidden` porque é acabamento, não conteúdo. */}
+              <div
+                aria-hidden
+                className="absolute inset-0"
+                style={{
+                  background: 'linear-gradient(to top, rgba(248,250,252,.94) 26%, rgba(248,250,252,.60) 64%, rgba(248,250,252,0) 100%)',
+                  backdropFilter: 'blur(12px)',
+                  WebkitBackdropFilter: 'blur(12px)',
+                  maskImage: 'linear-gradient(to top, #000 58%, transparent 100%)',
+                  WebkitMaskImage: 'linear-gradient(to top, #000 58%, transparent 100%)',
+                }}
+              />
+              <div
+                className="relative px-4 sm:px-5 lg:px-8"
+                style={{
+                  paddingTop: '2.75rem',
+                  /* "Um pouquinho mais alto": o botão descola do rodapé em vez
+                     de raspar nele, e no iPhone soma o indicador de home. */
+                  paddingBottom: 'calc(max(1.25rem, env(safe-area-inset-bottom)) + 0.5rem)',
+                }}
+              >
+                {/* Mesma coluna de leitura do cabeçalho e da folha. */}
+                <div className="pointer-events-auto mx-auto flex w-full max-w-[26rem] items-center gap-2">
+                  {podeRecusar && (
+                    <button
+                      onClick={() => { setRefuseReason(''); setRefuseError(null); setIsRefuseModalOpen(true); }}
+                      disabled={loading}
+                      title="Recusar assinatura"
+                      aria-label="Recusar assinatura"
+                      className="flex min-h-[52px] flex-none items-center justify-center gap-1.5 rounded-full border border-rose-200 bg-white/85 px-3.5 text-xs font-semibold text-rose-700 shadow-sm backdrop-blur transition-colors duration-200 hover:bg-rose-50 active:scale-95 disabled:opacity-50 sm:min-h-[54px] sm:px-4"
+                      style={{ WebkitTapHighlightColor: 'transparent' }}
+                    >
+                      <X className="h-4 w-4" />
+                      <span className="hidden sm:inline">Recusar</span>
+                    </button>
+                  )}
+                  <button
+                    onClick={openSignModal}
+                    disabled={isButtonDisabled}
+                    data-guia="assinar"
+                    className={buttonClass}
+                    style={{ WebkitTapHighlightColor: 'transparent' }}
+                  >
+                    {isWaiting ? (
+                        <>
+                          <Loader2 className="h-[17px] w-[17px] animate-spin" />
+                          <span>Carregando…</span>
+                        </>
+                    ) : (
+                        <>
+                          <PenTool className="h-[17px] w-[17px]" />
+                          <span>Assinar documento</span>
+                        </>
+                    )}
+                  </button>
+                </div>
+              </div>
+            </div>
+          );
+        })()
+      )}
+      </div>
+
       {loading && createPortal(
         <div className="fixed inset-0 z-[9998]">
           {/*
@@ -4233,107 +4401,6 @@ const PublicSigningPage: React.FC<PublicSigningPageProps> = ({ token }) => {
           />
         </div>,
         document.body
-      )}
-
-      {/* Botão Assinar - Flutuante estilizado */}
-      {signer?.status !== 'signed' && (
-        (() => {
-          const isWaiting = !canOpenSignModal || queuedOpenSignModal;
-          const isButtonDisabled = loading || isSignModalOpen;
-
-          /*
-            O BOTÃO.
-
-            Era um disco de laranja CHAPADO com duas sombras largas e difusas
-            por baixo — de longe parecia um borrão alaranjado apoiado no
-            documento, e o `ring-white/12` que deveria dar acabamento não
-            aparecia em tela nenhuma.
-
-            Agora a peça tem volume de verdade: um degradê curto de cima para
-            baixo (a luz vem de cima, como no resto da interface), um fio de
-            branco POR DENTRO da borda superior, uma sombra curta e escura que
-            assenta a peça e uma sombra longa e difusa que a levanta do papel.
-            É a mesma receita dos botões físicos do sistema: contato + altura,
-            e não uma mancha só.
-
-            O tamanho também subiu (52 px de altura, 54 no desktop): este é o
-            único botão da tela, e ele estava com a mesma altura de um controle
-            secundário.
-          */
-          const acabamentoNormal = [
-            'bg-[linear-gradient(180deg,#fb7c3f_0%,#ea580c_54%,#d94d06_100%)]',
-            'shadow-[inset_0_1px_0_rgba(255,255,255,0.30),0_2px_5px_rgba(124,45,18,0.30),0_12px_26px_-10px_rgba(234,88,12,0.62)]',
-            'hover:shadow-[inset_0_1px_0_rgba(255,255,255,0.34),0_4px_10px_rgba(124,45,18,0.32),0_18px_34px_-12px_rgba(234,88,12,0.70)]',
-            'hover:-translate-x-1/2 hover:-translate-y-[2px] active:translate-y-0 active:scale-[0.985]',
-          ].join(' ');
-
-          const buttonClass = [
-            'fixed left-1/2 z-50 flex min-h-[52px] w-[calc(100%_-_2rem)] max-w-[22rem] -translate-x-1/2',
-            'items-center justify-center gap-2.5 rounded-full px-7 text-[15px] font-bold text-white',
-            'whitespace-nowrap outline-none transition-[transform,box-shadow,opacity] duration-200 ease-out',
-            'focus-visible:ring-2 focus-visible:ring-orange-400 focus-visible:ring-offset-2 focus-visible:ring-offset-[#f8fafc]',
-            'sm:min-h-[54px] sm:w-auto sm:px-9 sm:text-[15.5px]',
-            isButtonDisabled
-              ? 'cursor-not-allowed bg-slate-300 text-slate-500 shadow-none'
-              : isWaiting
-                ? 'cursor-wait bg-[linear-gradient(180deg,#f5a077_0%,#e8794a_54%,#dc6a3a_100%)] shadow-[0_10px_22px_-12px_rgba(234,88,12,0.45)]'
-                : acabamentoNormal,
-          ].join(' ');
-
-          return (
-            <>
-              {/*
-                O véu que separa o botão do texto.
-
-                Era um degradê PRETO (`from-slate-950/44`), herdado de quando o
-                leitor tinha moldura escura. Sobre a folha branca ele virava uma
-                mancha suja atravessando o rodapé do documento — a coisa mais
-                feia da tela no celular. Agora é o próprio chão da página
-                subindo: o texto se dissolve no fundo em vez de ser encardido.
-
-                A linha branca de 1 px que vinha embaixo também saiu: ela existia
-                para marcar a borda contra o escuro, e no claro era invisível.
-              */}
-              <div
-                aria-hidden
-                className="pointer-events-none fixed inset-x-0 bottom-0 z-40 h-[calc(7rem_+_env(safe-area-inset-bottom))]"
-                style={{ background: 'linear-gradient(to top, #f8fafc 34%, rgba(248,250,252,.86) 62%, rgba(248,250,252,0))' }}
-              />
-              <button
-                onClick={openSignModal}
-                disabled={isButtonDisabled}
-                data-guia="assinar"
-                className={buttonClass}
-                style={{ WebkitTapHighlightColor: 'transparent', bottom: 'max(1.25rem, env(safe-area-inset-bottom))' }}
-              >
-                {(!canOpenSignModal || queuedOpenSignModal) ? (
-                    <>
-                      <Loader2 className="h-[17px] w-[17px] animate-spin" />
-                      <span>Carregando…</span>
-                    </>
-                ) : (
-                    <>
-                      <PenTool className="h-[17px] w-[17px]" />
-                      <span>Assinar documento</span>
-                    </>
-                )}
-              </button>
-            </>
-          );
-        })()
-      )}
-
-      {/* Botão Recusar - secundário (acima do botão Assinar) */}
-      {signer?.status === 'pending' && (request as any)?.allow_refusal && !isSignModalOpen && (
-        <button
-          onClick={() => { setRefuseReason(''); setRefuseError(null); setIsRefuseModalOpen(true); }}
-          disabled={loading}
-          className="fixed left-1/2 z-50 flex min-h-11 w-[calc(100%_-_3rem)] max-w-[19rem] -translate-x-1/2 items-center justify-center gap-2 whitespace-nowrap rounded-full border border-rose-200 bg-white/90 px-5 py-2.5 text-xs font-semibold text-rose-700 shadow-md backdrop-blur transition-all duration-200 hover:bg-rose-50 active:scale-95 disabled:opacity-50 sm:w-auto"
-          style={{ WebkitTapHighlightColor: 'transparent', bottom: 'calc(max(1.25rem, env(safe-area-inset-bottom)) + 4.5rem)' }}
-        >
-          <X className="w-4 h-4" />
-          Recusar assinatura
-        </button>
       )}
 
       {/* Modal dos Termos de Uso (LGPD) */}

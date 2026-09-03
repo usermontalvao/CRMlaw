@@ -1,6 +1,7 @@
 import type { GeneratedDocument } from '../types/document.types';
 import type { SignatureRequestWithSigners } from '../types/signature.types';
 import { matchesNormalizedSearch, normalizeSearchText } from './search';
+import { lerBuscaDeAssinatura, somenteDigitos } from './buscaDeAssinatura';
 
 export interface SignatureFilterState {
   searchTerm: string;
@@ -28,8 +29,53 @@ export const filterSignatureRequests = (
           ? 90 * 24 * 60 * 60 * 1000
           : 0;
 
+  /*
+    O QUE A BUSCA ALCANÇA.
+
+    Ela procurava em DOIS campos: nome do documento e nome do cliente. Só que a
+    página pública, quando o link quebra, mostra um código e manda a pessoa
+    falar com o escritório — e colar aquele código aqui não achava nada. O
+    código não tinha onde ser consultado.
+
+    Agora o termo é LIDO antes de ser usado (ver `lerBuscaDeAssinatura`), e cada
+    forma vai para o campo certo:
+
+      · token (ou o link inteiro do WhatsApp) → `public_token` do signatário e
+        o id da solicitação — busca EXATA, porque um UUID não se procura por
+        pedaço;
+      · dígitos → CPF e telefone dos signatários, comparados sem pontuação;
+      · texto  → documento, cliente, e os nomes e e-mails de quem assina, mais
+        o código do envelope.
+
+    A busca por signatário é a que faltava no dia a dia: metade das perguntas do
+    escritório começa por "a assinatura da fulana", e o nome dela nunca esteve
+    no nome do arquivo.
+  */
+  const busca = lerBuscaDeAssinatura(filters.searchTerm);
+
   const out = requests.filter((req) => {
-    const matchesSearch = matchesNormalizedSearch(filters.searchTerm, [req.document_name, req.client_name]);
+    const signatarios = req.signers ?? [];
+
+    let matchesSearch: boolean;
+    if (busca.tipo === 'vazio') {
+      matchesSearch = true;
+    } else if (busca.tipo === 'token') {
+      matchesSearch =
+        req.id.toLowerCase() === busca.token ||
+        signatarios.some((s) => (s.public_token || '').toLowerCase() === busca.token);
+    } else if (busca.tipo === 'digitos') {
+      const alvo = busca.digitos as string;
+      matchesSearch = signatarios.some(
+        (s) => somenteDigitos(s.cpf).includes(alvo) || somenteDigitos(s.phone).includes(alvo),
+      );
+    } else {
+      matchesSearch = matchesNormalizedSearch(filters.searchTerm, [
+        req.document_name,
+        req.client_name,
+        (req as any).envelope_verification_code,
+        ...signatarios.flatMap((s) => [s.name, s.email]),
+      ]);
+    }
     const expiresAt = (req as any).expires_at as string | null | undefined;
     const isExpired = expiresAt && new Date(expiresAt).getTime() < now && req.status !== 'signed';
     let matchesStatus: boolean;

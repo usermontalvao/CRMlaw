@@ -37,6 +37,53 @@ export type ReleaseNote = {
 
 export const releases: ReleaseNote[] = [
   {
+    version: '1.22.6',
+    date: '02/09/2026',
+    summary: 'O botão de assinar não aparecia no iPhone, e uma falha no carregamento deixava a página em branco sem saída. Os dois foram corrigidos, e o código do link agora pode ser pesquisado no painel.',
+    modules: [
+      {
+        moduleId: 'assinatura-publica',
+        changes: [
+          {
+            type: 'fix' as const,
+            title: 'No iPhone, o botão de assinar não aparecia',
+            description: 'A barra com o botão "Assinar documento" flutuava presa ao rodapé do navegador. No Safari do iPhone, uma peça flutuante é posicionada como se as barras do navegador não existissem — e a barra inferior do Safari, que está de pé justamente quando a página abre, cobria exatamente a faixa onde o botão era desenhado. O único botão da página ficava escondido atrás dela, e a pessoa rolava o contrato inteiro sem encontrar como assinar. A barra agora se apoia na altura realmente visível da tela: aparece no chão da tela em qualquer aparelho, com as barras do navegador abertas ou recolhidas.',
+          },
+          {
+            type: 'improvement' as const,
+            title: 'O botão descolou do rodapé e o vidro voltou',
+            description: 'O botão subiu um pouco — deixou de raspar a borda inferior da tela, e nos iPhones com barra de gestos ele passa a respeitá-la. O fundo atrás dele voltou a ser translúcido e desfocado, com o desfoque nascendo suavemente em vez de cortar o contrato com uma faixa reta. E o botão "Recusar", que ficava empilhado por cima do "Assinar", veio para o lado: eram duas peças flutuantes comendo oito centímetros de tela.',
+          },
+          {
+            type: 'improvement' as const,
+            title: 'O cabeçalho ocupava duas faixas no celular',
+            description: 'Marca numa linha, nome do documento na outra: 88 pixels de cabeçalho antes de o contrato começar — num celular de tela curta, um sétimo do papel. Agora é uma linha só, de 53 pixels. No celular a marca fica no símbolo e o botão de histórico fica no relógio, para que o nome do documento — a informação que importa aqui — tenha a largura da tela.',
+          },
+          {
+            type: 'fix' as const,
+            title: 'A página ficava em branco e sem saída',
+            description: 'Quando algo falhava durante o carregamento — o pedaço de código que não termina de baixar numa rede de celular instável, ou um erro no meio da montagem do documento — a página inteira desaparecia e sobrava uma tela branca, sem mensagem e sem botão. Não havia nenhuma proteção contra isso em nenhuma rota pública do sistema. Agora existe: a página tenta se recarregar sozinha uma vez e, se ainda assim não abrir, mostra uma tela explicando o que houve, com um botão para tentar de novo e o código do link pronto para copiar. O limite de uma tentativa automática é o que impede a página de entrar em laço quando o problema é permanente.',
+          },
+          {
+            type: 'fix' as const,
+            title: 'A tela de carregamento podia girar para sempre',
+            description: 'A cortina de abertura só saía quando o documento terminava de montar. Se isso nunca acontecesse — arquivo que não confirma, download que morre no meio, aparelho que não dá conta —, ela girava indefinidamente e a única saída era fechar a aba e desistir de assinar. Depois de 32 segundos de espera ela passa a oferecer "Abrir de novo". Aparece tarde de propósito: oferecer isso cedo ensina a recarregar por impaciência, e cada recarga recomeça o download do zero.',
+          },
+        ],
+      },
+      {
+        moduleId: 'assinaturas',
+        changes: [
+          {
+            type: 'feature' as const,
+            title: 'A busca do painel agora encontra pelo código do link',
+            description: 'Quando um link de assinatura falha, a página pública mostra um código e manda a pessoa procurar o escritório com ele. Só que a busca do painel procurava apenas por nome do documento e nome do cliente: colar aquele código não achava nada, e o código não tinha onde ser consultado. Agora a busca lê o que foi colado e procura no lugar certo — o código do link (ou o link inteiro do WhatsApp, encaminhado como veio) encontra a solicitação exata; CPF e telefone encontram pelo signatário, com ou sem pontuação; e o texto passou a alcançar também o nome e o e-mail de quem assina, não só o nome do arquivo. Uma etiqueta no campo mostra o que a busca entendeu.',
+          },
+        ],
+      },
+    ],
+  },
+  {
     version: '1.22.5',
     date: '02/09/2026',
     summary: 'Três correções de segurança na assinatura pública: o link de um signatário deixa de entregar o dos outros, e o IP registrado passa a ser o de verdade.',

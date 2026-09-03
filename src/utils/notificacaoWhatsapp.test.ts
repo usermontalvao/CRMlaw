@@ -16,6 +16,11 @@ import {
   deveLembrarDoPrazo,
   deveCobrarPrazoVencido,
   DIAS_DE_COBRANCA_DO_VENCIDO,
+  diaDeHoje,
+  diaDoVencimento,
+  diasDeAtraso,
+  diasParaVencer,
+  inicioDoDia,
 } from './notificacaoWhatsapp.ts';
 
 test('o espelho em supabase/functions/_shared é idêntico byte a byte', () => {
@@ -323,16 +328,32 @@ test('o aviso à administração diz de quem é o prazo; o do responsável não 
 
 test('o lembrete sai UMA vez, no dia exato — não todo dia até vencer', () => {
   // "Avisar 2 dias antes" é a configuração de todos os prazos do escritório
-  // hoje. Antes, D−2, D−1 e D−0 disparavam; agora só D−2.
+  // hoje. Antes, D−2, D−1 e D−0 disparavam; agora só D−2 (e o dia do
+  // vencimento, que tem regra própria no teste abaixo).
   assert.equal(deveLembrarDoPrazo(2, 2), true, 'D−2 é o dia pedido');
   assert.equal(deveLembrarDoPrazo(1, 2), false, 'D−1 já foi avisado ontem');
-  assert.equal(deveLembrarDoPrazo(0, 2), false, 'no dia do vencimento não se repete');
   assert.equal(deveLembrarDoPrazo(3, 2), false, 'ainda cedo demais');
+});
+
+test('o dia do vencimento sempre avisa, configurado ou não', () => {
+  // Este aviso não é novo: ele saía pela cobrança de VENCIDO, com o título
+  // "Prazo vencido" num prazo que ainda tinha o dia inteiro pela frente. Mudou
+  // de porta para poder dizer a verdade — e continua saindo mesmo quando o
+  // prazo não pede lembrete nenhum.
+  assert.equal(deveLembrarDoPrazo(0, 2), true, 'vence hoje');
+  assert.equal(deveLembrarDoPrazo(0, null), true, 'sem "avisar N antes" também');
+  assert.equal(deveLembrarDoPrazo(0, undefined), true);
 });
 
 test('"avisar 0 dias antes" continua avisando no dia — e só nele', () => {
   assert.equal(deveLembrarDoPrazo(0, 0), true);
   assert.equal(deveLembrarDoPrazo(1, 0), false);
+});
+
+test('o dia do vencimento não é lido como atraso', () => {
+  // A regra que o escritório cobrou: "se vence hoje não é vencido".
+  assert.equal(deveLembrarDoPrazo(0, 2), true, 'hoje é lembrete');
+  assert.equal(deveCobrarPrazoVencido(0), false, 'hoje não é cobrança');
 });
 
 test('sem "quantos dias antes" não há dia certo, e nada sai', () => {
@@ -347,9 +368,8 @@ test('prazo já vencido não entra pelo lembrete', () => {
   assert.equal(deveLembrarDoPrazo(-1, 2), false);
 });
 
-test('o vencido cobra no dia e mais uma vez três dias depois — e para', () => {
-  assert.equal(deveCobrarPrazoVencido(0), true, 'o dia do vencimento');
-  assert.equal(deveCobrarPrazoVencido(1), false);
+test('o vencido cobra no dia seguinte e mais uma vez no terceiro — e para', () => {
+  assert.equal(deveCobrarPrazoVencido(1), true, 'o primeiro dia de atraso');
   assert.equal(deveCobrarPrazoVencido(2), false);
   assert.equal(deveCobrarPrazoVencido(3), true, 'a insistência única');
   // O 4º dia é o que separava o aviso útil da cobrança diária eterna: era aqui
@@ -359,34 +379,100 @@ test('o vencido cobra no dia e mais uma vez três dias depois — e para', () =>
 });
 
 test('prazo que ainda não venceu nunca é cobrado', () => {
+  assert.equal(deveCobrarPrazoVencido(0), false, 'vence hoje — ainda dá tempo');
   assert.equal(deveCobrarPrazoVencido(-1), false);
 });
 
 test('a cobrança do vencido soma dois dias, e ninguém mais', () => {
   // Trava contra alguém "só acrescentar mais um" sem discutir: a lista é a
   // decisão, e mudá-la tem de quebrar este teste.
-  assert.deepEqual([...DIAS_DE_COBRANCA_DO_VENCIDO], [0, 3]);
+  assert.deepEqual([...DIAS_DE_COBRANCA_DO_VENCIDO], [1, 3]);
 });
 
-test('a conta do prazo real: seis dias de disparo viram três', () => {
+test('a conta do prazo real: seis dias de disparo viram quatro', () => {
   // CONTRAMINUTA AO A.I, avisar 2 dias antes, venceu em 27/08. Os seis dias
   // medidos no banco, um por linha, com os dois canais que existiam então.
+  //
+  // `faltam` e `vencido` são o mesmo número com o sinal trocado — é o que
+  // `diasParaVencer`/`diasDeAtraso` devolvem, e ter UMA conta é o que impede o
+  // dia do vencimento de contar como lembrete e como atraso ao mesmo tempo.
   const dias = [
-    { faltam: 2,  vencido: -1 }, // 25/08
+    { faltam: 2,  vencido: -2 }, // 25/08
     { faltam: 1,  vencido: -1 }, // 26/08
-    { faltam: -1, vencido: 0 },  // 27/08 — venceu
+    { faltam: 0,  vencido: 0 },  // 27/08 — vence hoje
     { faltam: -1, vencido: 1 },  // 28/08
-    { faltam: -1, vencido: 2 },  // 29/08
-    { faltam: -1, vencido: 3 },  // 30/08
+    { faltam: -2, vencido: 2 },  // 29/08
+    { faltam: -3, vencido: 3 },  // 30/08
   ];
   const disparos = dias.filter(
     (d) => deveLembrarDoPrazo(d.faltam, 2) || deveCobrarPrazoVencido(d.vencido),
   );
-  // 25/08 (lembrete), 27/08 (venceu) e 30/08 (a insistência).
-  assert.equal(disparos.length, 3);
+  // 25/08 (lembrete), 27/08 (vence hoje), 28/08 (venceu) e 30/08 (a
+  // insistência). É um disparo a mais do que a régua anterior mandava: ela
+  // gastava o dia 27 chamando de "vencido" o prazo que vencia naquele dia, e
+  // ficava sem nada a dizer no dia 28, que é quando o atraso começou de fato.
+  assert.equal(disparos.length, 4);
   // A janela medida SUBESTIMA o ganho: ela para no 3º dia de atraso, que é
   // justamente onde a regra nova cala. Um prazo esquecido por trinta dias
   // rendia sessenta avisos e passa a render os mesmos três disparos.
   const trintaDias = Array.from({ length: 30 }, (_, i) => i);
   assert.equal(trintaDias.filter(deveCobrarPrazoVencido).length, 2);
+});
+
+// ── "Se vence hoje não é vencido" ───────────────────────────────────────────
+
+test('o dia do vencimento sai de `due_date` em UTC, não do fuso de quem lê', () => {
+  // `due_date` é timestamptz, mas guarda DIA DE CALENDÁRIO: a meia-noite UTC do
+  // dia do vencimento. Reinterpretar esse instante em America/Cuiaba (UTC−4)
+  // recua um dia — é o defeito que este par de funções existe para fechar.
+  assert.equal(diaDoVencimento('2026-09-02 00:00:00+00'), '2026-09-02');
+  assert.equal(diaDoVencimento('2026-09-02T00:00:00.000Z'), '2026-09-02');
+  assert.equal(diaDoVencimento('2026-09-02'), '2026-09-02');
+  assert.equal(diaDoVencimento(new Date('2026-09-02T00:00:00Z')), '2026-09-02');
+  assert.equal(diaDoVencimento(null), null);
+  assert.equal(diaDoVencimento('ontem'), null);
+});
+
+test('hoje é o dia do escritório, e o corte é a meia-noite de Cuiabá', () => {
+  // 20:00 de Cuiabá já é o dia seguinte em UTC. Era essa faixa de quatro horas
+  // que declarava vencido, todo fim de tarde, um prazo que vencia no dia
+  // seguinte.
+  assert.equal(diaDeHoje(new Date('2026-09-02T23:59:00Z')), '2026-09-02', '19:59 em Cuiabá');
+  assert.equal(diaDeHoje(new Date('2026-09-03T00:30:00Z')), '2026-09-02', '20:30 em Cuiabá');
+  assert.equal(diaDeHoje(new Date('2026-09-03T04:00:00Z')), '2026-09-03', 'meia-noite em Cuiabá');
+});
+
+test('o prazo que vence hoje tem 0 de atraso o dia inteiro', () => {
+  const vence = '2026-09-02 00:00:00+00';
+  // Do primeiro ao último minuto do dia no escritório.
+  assert.equal(diasDeAtraso(vence, new Date('2026-09-02T04:00:00Z')), 0, '00:00 em Cuiabá');
+  assert.equal(diasDeAtraso(vence, new Date('2026-09-02T16:00:00Z')), 0, '12:00 em Cuiabá');
+  assert.equal(diasDeAtraso(vence, new Date('2026-09-03T03:59:00Z')), 0, '23:59 em Cuiabá');
+  // E vira atraso na virada do dia, não às 20:00 da véspera.
+  assert.equal(diasDeAtraso(vence, new Date('2026-09-03T04:00:00Z')), 1, 'agora sim');
+  assert.equal(diasDeAtraso(vence, new Date('2026-09-05T16:00:00Z')), 3);
+  // Antes do vencimento a conta é negativa — é o mesmo número de `faltam`.
+  assert.equal(diasDeAtraso(vence, new Date('2026-08-31T16:00:00Z')), -2);
+  assert.equal(diasParaVencer(vence, new Date('2026-08-31T16:00:00Z')), 2);
+  assert.equal(diasParaVencer(vence, new Date('2026-09-02T16:00:00Z')), 0, 'vence hoje');
+  assert.equal(diasDeAtraso(null, new Date('2026-09-02T16:00:00Z')), null);
+});
+
+test('o e-mail que o escritório recebeu: 02/09, vencendo hoje, chamado de vencido', () => {
+  // O caso relatado: prazo MEMORIAIS com vencimento 02/09/2026, e-mail com o
+  // título "Prazo vencido" e o corpo dizendo "Vence hoje!" na mesma tela.
+  const agora = new Date('2026-09-02T13:00:00Z'); // 09:00 em Cuiabá
+  const atraso = diasDeAtraso('2026-09-02 00:00:00+00', agora)!;
+  assert.equal(atraso, 0);
+  assert.equal(deveCobrarPrazoVencido(atraso), false, 'não é cobrança de vencido');
+  assert.equal(deveLembrarDoPrazo(-atraso, 2), true, 'é o lembrete de "vence hoje"');
+});
+
+test('o corte da consulta é o começo do dia de hoje', () => {
+  // O scheduler filtra no banco: `due_date >= inicioDoDia(hoje)` traz o que
+  // vence hoje ou depois, `< inicioDoDia(hoje)` traz só o que já venceu.
+  assert.equal(inicioDoDia('2026-09-02'), '2026-09-02T00:00:00.000Z');
+  const corte = inicioDoDia(diaDeHoje(new Date('2026-09-02T13:00:00Z')));
+  assert.ok(Date.parse('2026-09-02T00:00:00+00:00') >= Date.parse(corte), 'vence hoje: fica');
+  assert.ok(Date.parse('2026-09-01T00:00:00+00:00') < Date.parse(corte), 'venceu ontem: sai');
 });

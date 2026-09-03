@@ -373,43 +373,156 @@ export function dentroDoHorarioDeAviso(agora: Date = new Date()): boolean {
 // hoje; quem decide por quais canais continua sendo `notification_rules`.
 
 /**
- * O lembrete de "prazo vencendo" sai UMA VEZ SÓ, no dia exato que o prazo pede.
+ * O lembrete de "prazo vencendo" sai UMA VEZ SÓ, no dia exato que o prazo pede
+ * — e SEMPRE no dia do vencimento.
  *
  * Antes, `faltam > avisar_antes` deixava passar todos os dias abaixo do teto:
  * com "avisar 2 dias antes" o aviso saía em D−2, D−1 e D−0. Agora é igualdade —
  * um prazo, um lembrete.
  *
- * Devolve `false` para configuração ausente ou negativa, que é como o scheduler
- * já tratava esses casos: sem "quantos dias antes" não há dia certo para avisar.
+ * O dia do vencimento (`faltam === 0`) é a exceção, e não depende de
+ * configuração nenhuma. Esse aviso já existia e sempre saiu: quem o mandava era
+ * a cobrança de VENCIDO, que chamava de "vencido" um prazo com o dia inteiro
+ * pela frente. Ele continua saindo no mesmo dia — só deixou de mentir no
+ * título, e mudou de porta.
+ *
+ * Fora o dia do vencimento, devolve `false` para configuração ausente ou
+ * negativa: sem "quantos dias antes" não há dia certo para avisar.
  */
 export function deveLembrarDoPrazo(
   diasQueFaltam: number,
   avisarDiasAntes: number | null | undefined,
 ): boolean {
+  if (!Number.isFinite(diasQueFaltam) || diasQueFaltam < 0) return false;
+  if (diasQueFaltam === 0) return true;
   if (avisarDiasAntes === null || avisarDiasAntes === undefined) return false;
   if (!Number.isFinite(avisarDiasAntes) || avisarDiasAntes < 0) return false;
-  if (!Number.isFinite(diasQueFaltam) || diasQueFaltam < 0) return false;
   return diasQueFaltam === avisarDiasAntes;
 }
 
 /**
- * Os dias em que o aviso de prazo VENCIDO ainda sai: o dia do vencimento e mais
- * uma insistência três dias depois. Depois disso, silêncio.
+ * Os dias de ATRASO em que o aviso de prazo vencido ainda sai: o primeiro dia
+ * depois do vencimento e mais uma insistência no terceiro. Depois disso,
+ * silêncio.
  *
- * Não é desistir do prazo — é parar de gritar. Quem não agiu no dia nem três
- * dias depois não vai agir no décimo aviso idêntico, e o prazo continua na
- * lista de pendentes, no painel e no relatório. O que acaba é a repetição
- * diária no telefone de alguém.
+ * Não é desistir do prazo — é parar de gritar. Quem não agiu no dia seguinte
+ * nem três dias depois não vai agir no décimo aviso idêntico, e o prazo
+ * continua na lista de pendentes, no painel e no relatório. O que acaba é a
+ * repetição diária no telefone de alguém.
+ *
+ * A lista começava em 0 — o PRÓPRIO dia do vencimento. Era isso que mandava
+ * "Prazo vencido" para um prazo que vence hoje, com o corpo do e-mail dizendo
+ * "Vence hoje!" duas linhas abaixo, e que subia a escada para a administração
+ * antes de o responsável ter perdido coisa nenhuma. Vencer é o fim do dia, não
+ * o começo: o dia do vencimento virou lembrete (`deveLembrarDoPrazo`) e a
+ * cobrança abre no dia seguinte.
  */
-export const DIAS_DE_COBRANCA_DO_VENCIDO = [0, 3] as const;
+export const DIAS_DE_COBRANCA_DO_VENCIDO = [1, 3] as const;
 
 /**
  * O aviso de vencido sai hoje?
  *
- * `diasVencido` é quantos dias inteiros se passaram desde o vencimento — 0 no
- * próprio dia. Negativo (prazo que ainda não venceu) nunca cobra.
+ * `diasVencido` é quantos dias de CALENDÁRIO se passaram desde o vencimento —
+ * 0 no próprio dia do vencimento, 1 no dia seguinte (ver `diasDeAtraso`). O 0 e
+ * os negativos nunca cobram: o prazo ainda não venceu.
  */
 export function deveCobrarPrazoVencido(diasVencido: number): boolean {
   if (!Number.isFinite(diasVencido)) return false;
   return (DIAS_DE_COBRANCA_DO_VENCIDO as readonly number[]).includes(diasVencido);
+}
+
+// ── QUE DIA VENCE, E QUE DIA É HOJE ─────────────────────────────────────────
+//
+// `deadlines.due_date` é `timestamptz`, mas o que está gravado ali é DIA DE
+// CALENDÁRIO: a meia-noite UTC do dia do vencimento — `2026-09-02 00:00+00` é
+// "2 de setembro", e não um instante que alguém escolheu. Medir a diferença em
+// milissegundos entre esse instante e o relógio responde a pergunta errada, e
+// errava duas vezes:
+//   • o prazo virava "vencido" à 00:00 UTC, que é 20:00 do dia ANTERIOR no
+//     escritório (America/Cuiaba, UTC−4);
+//   • e a conta dava 0 dia de atraso durante todo o dia do vencimento, o que
+//     deixava a cobrança de vencido disparar num prazo que ainda vence.
+//
+// A conta certa compara DIAS: o dia do vencimento (lido em UTC, porque é assim
+// que ele foi gravado) contra o dia de hoje no fuso do escritório. É a mesma
+// disciplina de `_shared/intimation-deadline.ts` — data de prazo é dia de
+// calendário, não instante.
+
+/**
+ * Fuso que define QUE DIA é hoje para o escritório.
+ *
+ * A mesma constante aparece em `deadline-automations/rules.ts`
+ * (`OFFICE_TIME_ZONE`) e em `wa-channel-hours.ts` (`FUSO_PADRAO_ESCRITORIO`).
+ * A cópia não é descuido: este arquivo é espelhado byte a byte em `src/utils/`
+ * e por isso não pode importar nada. Mudar de cidade exige mudar os três.
+ */
+export const FUSO_DO_ESCRITORIO = 'America/Cuiaba';
+
+/** O dia de calendário ('YYYY-MM-DD') gravado em `due_date`. */
+export function diaDoVencimento(vencimento: string | Date | null | undefined): string | null {
+  if (!vencimento) return null;
+  if (vencimento instanceof Date) {
+    return Number.isNaN(vencimento.getTime()) ? null : vencimento.toISOString().slice(0, 10);
+  }
+  const texto = String(vencimento).trim();
+  const direto = texto.match(/^(\d{4}-\d{2}-\d{2})/);
+  if (direto) return direto[1];
+  const ms = Date.parse(texto);
+  return Number.isNaN(ms) ? null : new Date(ms).toISOString().slice(0, 10);
+}
+
+/** Hoje ('YYYY-MM-DD') no fuso do escritório. */
+export function diaDeHoje(agora: Date = new Date(), fuso: string = FUSO_DO_ESCRITORIO): string {
+  // 'en-CA' já formata em ISO ('2026-09-02'); montar a string na mão a partir
+  // de `formatToParts` é o mesmo resultado com mais chance de erro.
+  return new Intl.DateTimeFormat('en-CA', {
+    timeZone: fuso,
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+  }).format(agora);
+}
+
+/**
+ * O instante que ABRE um dia de calendário, no formato em que `due_date` está
+ * gravado. É o que permite cortar "vence hoje" de "venceu antes de hoje" na
+ * própria consulta, em vez de trazer todos os pendentes para a memória.
+ */
+export function inicioDoDia(dia: string): string {
+  return `${dia}T00:00:00.000Z`;
+}
+
+const DIA_EM_MS = 86400000;
+
+const diaEmMs = (dia: string): number => {
+  const [ano, mes, d] = dia.split('-').map(Number);
+  return Date.UTC(ano, mes - 1, d);
+};
+
+/**
+ * Dias de atraso: 0 no dia do vencimento, 1 no dia seguinte, negativo enquanto
+ * o prazo ainda está por vencer. `null` quando a data não dá para ler.
+ */
+export function diasDeAtraso(
+  vencimento: string | Date | null | undefined,
+  agora: Date = new Date(),
+  fuso: string = FUSO_DO_ESCRITORIO,
+): number | null {
+  const dia = diaDoVencimento(vencimento);
+  if (!dia) return null;
+  return Math.round((diaEmMs(diaDeHoje(agora, fuso)) - diaEmMs(dia)) / DIA_EM_MS);
+}
+
+/** Dias que faltam: 0 quando vence hoje, negativo quando já venceu. */
+export function diasParaVencer(
+  vencimento: string | Date | null | undefined,
+  agora: Date = new Date(),
+  fuso: string = FUSO_DO_ESCRITORIO,
+): number | null {
+  const atraso = diasDeAtraso(vencimento, agora, fuso);
+  if (atraso === null) return null;
+  // `-0` é o mesmo número para a aritmética e um valor DIFERENTE para
+  // `===`/`Object.is` e para o `assert.strictEqual` — trocar o sinal do zero
+  // faria "vence hoje" falhar uma comparação que o resto do arquivo passa.
+  return atraso === 0 ? 0 : -atraso;
 }
