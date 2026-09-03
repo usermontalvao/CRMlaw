@@ -300,6 +300,7 @@ const PublicTemplateFillPage: React.FC<PublicTemplateFillPageProps> = ({ token }
 
   const [submitting, setSubmitting] = useState(false);
   const [result, setResult] = useState<{ signerToken: string; requestId: string } | null>(null);
+  const submitAttemptedRef = useRef(false);
 
   const [cepLookupLoading, setCepLookupLoading] = useState(false);
   const [cepLookupError, setCepLookupError] = useState<string | null>(null);
@@ -913,10 +914,14 @@ const PublicTemplateFillPage: React.FC<PublicTemplateFillPageProps> = ({ token }
 
   useEffect(() => {
     if (!activeStep) return;
-    if (activeStep.kind !== 'submit') return;
-    if (submitting || result) return;
-    submitNow();
-  }, [activeStep, submitting, result]);
+    if (activeStep.kind !== 'submit') {
+      submitAttemptedRef.current = false;
+      return;
+    }
+    if (submitAttemptedRef.current || result) return;
+    submitAttemptedRef.current = true;
+    void submitNow();
+  }, [activeStep, result]);
 
   if (loading || redirecting) {
     return <PublicFlowLoader />;
@@ -1058,20 +1063,41 @@ const PublicTemplateFillPage: React.FC<PublicTemplateFillPageProps> = ({ token }
           <form onSubmit={handleSubmit}>
             {activeStep.kind === 'submit' ? (
               <div>
-                <div className="flex items-center gap-2">
-                  <Loader2 className="w-4 h-4 animate-spin text-slate-600" />
-                  <p className="text-sm font-medium text-slate-900">Gerando documento...</p>
-                </div>
-                <p className="mt-2 text-xs text-slate-600">Aguarde, estamos preparando o link de assinatura.</p>
-                <div className="mt-4">
+                {submitting ? (
+                  <>
+                    <div className="flex items-center gap-2">
+                      <Loader2 className="w-4 h-4 animate-spin text-slate-600" />
+                      <p className="text-sm font-medium text-slate-900">Gerando documento...</p>
+                    </div>
+                    <p className="mt-2 text-xs text-slate-600">Aguarde, estamos preparando o link de assinatura.</p>
+                  </>
+                ) : error ? (
+                  <>
+                    <div className="flex items-center gap-2">
+                      <AlertCircle className="w-4 h-4 text-rose-600" />
+                      <p className="text-sm font-medium text-slate-900">Não foi possível gerar o documento</p>
+                    </div>
+                    <p className="mt-2 text-xs text-slate-600">Você pode corrigir os dados ou tentar novamente.</p>
+                  </>
+                ) : null}
+                <div className="mt-4 flex gap-2">
                   <button
                     type="button"
                     onClick={goBack}
                     disabled={submitting}
-                    className="w-full px-3 py-2 border border-[#e7e5df] bg-[#f8f7f5] text-slate-700 text-xs font-medium rounded hover:bg-slate-50 disabled:opacity-40"
+                    className="flex-1 px-3 py-2 border border-[#e7e5df] bg-[#f8f7f5] text-slate-700 text-xs font-medium rounded hover:bg-slate-50 disabled:opacity-40"
                   >
                     Voltar
                   </button>
+                  {!submitting && error && (
+                    <button
+                      type="button"
+                      onClick={() => void submitNow()}
+                      className="flex-1 px-3 py-2 bg-orange-600 text-white text-xs font-medium rounded hover:bg-orange-500"
+                    >
+                      Tentar novamente
+                    </button>
+                  )}
                 </div>
               </div>
             ) : activeStep.kind === 'signer' ? (

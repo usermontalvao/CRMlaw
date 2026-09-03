@@ -4,7 +4,7 @@ import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
 import PizZip from 'https://esm.sh/pizzip@3.2.0?target=deno';
 import Docxtemplater from 'https://esm.sh/docxtemplater@3.66.5?target=deno';
 import { matchWaAiClientsByPhone } from '../_shared/wa-ai-client-link.ts';
-import { camposParaGravar } from '../_shared/kit-client-merge.ts';
+import { camposParaGravar, planejarTelefoneDoKit } from '../_shared/kit-client-merge.ts';
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -431,6 +431,7 @@ Deno.serve(async (req) => {
     let clientId: string | null = null;
     try {
       let existingClient: any = null;
+      let clientMatch: 'cpf' | 'link' | 'phone' | 'email' | null = null;
 
       const carregarCliente = async (id: string) => {
         const { data } = await admin
@@ -449,13 +450,38 @@ Deno.serve(async (req) => {
           .select('*')
           .eq('cpf_cnpj', clientPayload.cpf_cnpj)
           .maybeSingle();
-        if (!error && data) existingClient = data;
+        if (!error && data) {
+          existingClient = data;
+          clientMatch = 'cpf';
+        }
+
+        // Cadastros antigos ainda podem guardar CPF pontuado. A comparação
+        // forte continua sendo pelos dígitos para o cliente conseguir atualizar
+        // a própria ficha sem nascer uma duplicata.
+        if (!existingClient) {
+          const tail = clientPayload.cpf_cnpj.slice(-4);
+          const { data: legacyRows, error: legacyError } = await admin
+            .from('clients')
+            .select('*')
+            .ilike('cpf_cnpj', `%${tail}%`)
+            .is('merged_into_client_id', null)
+            .limit(20);
+          if (legacyError) throw new Error(`Falha ao conferir o CPF: ${legacyError.message}`);
+          const sameCpf = (legacyRows ?? []).filter((row: any) =>
+            cleanDigits(String(row?.cpf_cnpj ?? '')) === clientPayload.cpf_cnpj
+          );
+          if (sameCpf.length === 1) {
+            existingClient = sameCpf[0];
+            clientMatch = 'cpf';
+          }
+        }
       }
 
       // 2. O cliente que o próprio link já carregava (kit disparado de dentro
       //    da conversa, pelo atalho "/"): o vínculo veio de quem enviou.
       if (!existingClient && link.client_id) {
         existingClient = await carregarCliente(link.client_id);
+        if (existingClient) clientMatch = 'link';
       }
 
       // 3. Telefone — é assim que se acha o pré-cadastro aberto no atendimento.
@@ -467,10 +493,14 @@ Deno.serve(async (req) => {
         const hits = Array.isArray(data) ? data : [];
         if (error) throw new Error(`Falha ao conferir o telefone: ${error.message || error}`);
         if (hits.length > 1) {
-          throw new Error('O telefone corresponde a mais de um cadastro; a equipe precisa escolher o vínculo correto.');
+          // Telefone repetido não decide identidade, mas também não pode impedir
+          // o documento. Sem CPF/vínculo forte, o envelope segue sem alterar
+          // nenhuma das fichas ambíguas.
+          console.warn('Telefone corresponde a mais de um cadastro; documento seguirá sem vínculo automático.');
         }
         if (hits.length === 1 && hits[0]?.id) {
           existingClient = await carregarCliente(hits[0].id);
+          if (existingClient) clientMatch = 'phone';
         }
       }
 
@@ -481,7 +511,10 @@ Deno.serve(async (req) => {
           .select('*')
           .eq('email', clientPayload.email)
           .maybeSingle();
-        if (!error && data) existingClient = data;
+        if (!error && data) {
+          existingClient = data;
+          clientMatch = 'email';
+        }
       }
 
       if (existingClient?.id) {
@@ -492,58 +525,54 @@ Deno.serve(async (req) => {
         // documentos já pendurados nele continuam exatamente onde estavam.
         const promovendo = existingClient.is_pre_cadastro === true;
 
-        // O que o kit pode escrever mora em `camposParaGravar`, com testes:
-        // campo vazio sempre; e, SÓ na promoção, o nome que o kit completa. O
-        // pré-cadastro do WhatsApp se chama "Jeniffer" porque foi o que o
-        // atendente ouviu ao telefone — e essa etiqueta ficava para sempre no
-        // lugar do nome que a própria pessoa escreveu no documento que assinou.
+        // CPF/vínculo explícito torna o formulário uma atualização cadastral.
+        // Telefone/e-mail isolados continuam conservadores para não permitir
+        // que uma coincidência fraca reescreva a ficha de outra pessoa.
+        const strongMatch = clientMatch === 'cpf' || clientMatch === 'link' || promovendo;
+        const cadastroSemTelefones = { ...clientPayload, phone: null, mobile: null };
         const updateData: Record<string, any> = {
           ...camposParaGravar({
             atual: existingClient as Record<string, unknown>,
-            doKit: clientPayload,
+            doKit: cadastroSemTelefones,
             promovendo,
-            ignorar: ['client_type', 'created_by'],
+            substituirPreenchidos: strongMatch,
+            ignorar: ['client_type', 'created_by', 'status'],
           }),
           updated_by: link.created_by,
         };
-        const nomeCorrigido = typeof updateData.full_name === 'string'
-          && updateData.full_name !== existingClient.full_name
-          ? { de: existingClient.full_name as string | null, para: updateData.full_name as string }
-          : null;
+
+        const phonePlan = planejarTelefoneDoKit(existingClient, signerPhone, strongMatch);
+        if (phonePlan.field) updateData[phonePlan.field] = phonePlan.value;
 
         if (promovendo) updateData.is_pre_cadastro = false;
 
         const hasUpdates = Object.keys(updateData).length > 1;
         if (hasUpdates) {
-          await admin.from('clients').update(updateData).eq('id', clientId);
-        }
-
-        if (promovendo) {
-          // Trilha do cadastro: a ficha mostra por que o pré-cadastro virou cliente.
-          await admin.from('client_change_history').insert({
-            client_id: clientId,
-            field: 'is_pre_cadastro',
-            old_value: 'true',
-            new_value: 'false',
-            source: 'assinatura',
-            source_label: 'Pré-cadastro promovido ao preencher o kit de assinatura',
-            changed_by: link.created_by ?? null,
-          });
-        }
-
-        // Trocar o nome de um cliente é a mudança mais visível que existe numa
-        // ficha: ela precisa estar escrita, com o nome antigo do lado, para
-        // ninguém achar que o cadastro virou outra pessoa.
-        if (nomeCorrigido) {
-          await admin.from('client_change_history').insert({
-            client_id: clientId,
-            field: 'full_name',
-            old_value: nomeCorrigido.de,
-            new_value: nomeCorrigido.para,
-            source: 'assinatura',
-            source_label: 'Nome completo informado pelo cliente no kit de assinatura',
-            changed_by: link.created_by ?? null,
-          });
+          const { error: updateError } = await admin.from('clients').update(updateData).eq('id', clientId);
+          if (updateError) {
+            // Cadastro e documento são duas responsabilidades diferentes. Uma
+            // inconsistência na ficha fica registrada no log, mas nunca mais
+            // segura o contrato na tela de carregamento.
+            console.warn('Falha ao atualizar cadastro; documento seguirá:', updateError.message);
+          } else {
+            const historyRows = Object.entries(updateData)
+              .filter(([field]) => field !== 'updated_by')
+              .map(([field, newValue]) => ({
+                client_id: clientId,
+                field,
+                old_value: existingClient[field] == null ? null : String(existingClient[field]),
+                new_value: newValue == null ? null : String(newValue),
+                source: 'assinatura',
+                source_label: field === 'is_pre_cadastro'
+                  ? 'Pré-cadastro promovido ao preencher o kit de assinatura'
+                  : 'Dados atualizados pelo cliente no kit de assinatura',
+                changed_by: link.created_by ?? null,
+              }));
+            if (historyRows.length > 0) {
+              const { error: historyError } = await admin.from('client_change_history').insert(historyRows);
+              if (historyError) console.warn('Falha ao registrar histórico do cadastro:', historyError.message);
+            }
+          }
         }
       } else {
         const { data: created, error: createError } = await admin
@@ -558,13 +587,9 @@ Deno.serve(async (req) => {
       }
     } catch (e) {
       console.warn('Falha ao criar/atualizar cliente automaticamente:', e);
-      // Sem identidade resolvida, continuar criaria o envelope sem vínculo e
-      // esconderia o problema até depois da assinatura. O link permanece
-      // pendente para a pessoa tentar novamente após a equipe corrigir o dado.
-      throw new Error(
-        (e as Error)?.message
-          || 'Não foi possível identificar o cadastro para este documento. Tente novamente.',
-      );
+      // A sincronização cadastral é importante, mas secundária. O documento
+      // continua sendo gerado; quando a identidade já havia sido resolvida,
+      // preservamos o vínculo mesmo que algum campo ou o histórico falhe.
     }
 
     // Baixar DOCX principal

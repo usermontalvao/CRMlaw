@@ -1,8 +1,9 @@
 // O QUE O KIT PODE ESCREVER NA FICHA DO CLIENTE.
 //
-// A regra de sempre é conservadora, e por bom motivo: o kit é um formulário
-// preenchido pelo cliente, e ele não pode passar por cima de uma ficha que a
-// equipe montou. Por isso o preenchimento só entra em CAMPO VAZIO.
+// A regra depende de COMO a pessoa foi identificada. Quando o CPF ou o vínculo
+// explícito do link encontra a ficha, o kit é atualização cadastral: o dado
+// atual entra e o anterior vai para o histórico. Quando só telefone/e-mail
+// encontram alguém, continuamos conservadores e preenchemos apenas vazios.
 //
 // A exceção é a PROMOÇÃO DO PRÉ-CADASTRO. O pré-cadastro nasce no atendimento
 // do WhatsApp com o que se tinha na hora — quase sempre o primeiro nome, ou o
@@ -61,6 +62,8 @@ export interface KitClientMergeInput {
   promovendo: boolean;
   /** Campos que nunca saem do kit para a ficha. */
   ignorar?: readonly string[];
+  /** CPF/vínculo forte confirmou a ficha: dado não vazio mais recente vence. */
+  substituirPreenchidos?: boolean;
 }
 
 const VAZIO = (v: unknown): boolean => v === null || v === undefined || v === '';
@@ -80,6 +83,10 @@ export function camposParaGravar(input: KitClientMergeInput): Record<string, unk
     if (VAZIO(valor)) continue;
     const atual = input.atual[campo];
     if (VAZIO(atual)) { saida[campo] = valor; continue; }
+    if (input.substituirPreenchidos && normalizar(String(atual)) !== normalizar(String(valor))) {
+      saida[campo] = valor;
+      continue;
+    }
     // O único campo que o kit pode CORRIGIR, e só no instante da promoção.
     if (input.promovendo && campo === 'full_name'
       && nomeDoKitAcrescenta(atual as string, valor as string)) {
@@ -87,4 +94,58 @@ export function camposParaGravar(input: KitClientMergeInput): Record<string, unk
     }
   }
   return saida;
+}
+
+/** Normaliza um número brasileiro para a forma gravada no cadastro. */
+export function telefoneDoKitEmDigitos(valor: unknown): string {
+  let digits = String(valor ?? '').replace(/\D/g, '');
+  if (digits.length === 10 || digits.length === 11) digits = `55${digits}`;
+  return digits.length === 12 || digits.length === 13 ? digits : '';
+}
+
+/** Formas equivalentes do mesmo telefone, incluindo a variação do nono dígito. */
+export function variantesTelefoneDoKit(valor: unknown): string[] {
+  const digits = telefoneDoKitEmDigitos(valor);
+  if (!digits) return [];
+  const variants = new Set<string>([digits]);
+  const match = digits.match(/^55(\d{2})(\d+)$/);
+  if (match) {
+    const [, ddd, local] = match;
+    if (local.length === 9 && local[0] === '9') variants.add(`55${ddd}${local.slice(1)}`);
+    else if (local.length === 8) variants.add(`55${ddd}9${local}`);
+  }
+  return [...variants];
+}
+
+export function mesmoTelefoneDoKit(a: unknown, b: unknown): boolean {
+  const left = variantesTelefoneDoKit(a);
+  if (left.length === 0) return false;
+  const right = new Set(variantesTelefoneDoKit(b));
+  return left.some((value) => right.has(value));
+}
+
+export interface AtualizacaoTelefoneDoKit {
+  field: 'mobile' | 'phone' | null;
+  value: string;
+  oldValue: string | null;
+}
+
+/**
+ * Inclui o telefone atual sem descartar os dois números anteriores de uma vez:
+ * celular vazio primeiro, telefone vazio depois; ficha cheia substitui apenas
+ * o celular, e o valor anterior fica disponível para a trilha de alterações.
+ */
+export function planejarTelefoneDoKit(
+  atual: { mobile?: string | null; phone?: string | null },
+  novo: unknown,
+  permitirSubstituicao = true,
+): AtualizacaoTelefoneDoKit {
+  const value = telefoneDoKitEmDigitos(novo);
+  if (!value || mesmoTelefoneDoKit(atual.mobile, value) || mesmoTelefoneDoKit(atual.phone, value)) {
+    return { field: null, value: '', oldValue: null };
+  }
+  if (!atual.mobile) return { field: 'mobile', value, oldValue: null };
+  if (!atual.phone) return { field: 'phone', value, oldValue: null };
+  if (!permitirSubstituicao) return { field: null, value: '', oldValue: null };
+  return { field: 'mobile', value, oldValue: atual.mobile };
 }

@@ -37,6 +37,28 @@ export type ReleaseNote = {
 
 export const releases: ReleaseNote[] = [
   {
+    version: '1.22.8',
+    date: '03/09/2026',
+    summary: 'O formulário do cliente volta a gerar o documento quando o telefone já está cadastrado e passa a atualizar a ficha com histórico das mudanças.',
+    modules: [
+      {
+        moduleId: 'documentos',
+        changes: [
+          {
+            type: 'fix' as const,
+            title: 'Telefone já cadastrado não bloqueia mais o documento',
+            description: 'Uma divergência ou duplicidade no cadastro de telefone interrompia a geração e a tela tentava enviar novamente sem parar. Agora a sincronização da ficha não segura o documento: o formulário faz somente uma tentativa automática e, diante de uma falha real, oferece voltar ou tentar novamente.',
+          },
+          {
+            type: 'improvement' as const,
+            title: 'O cliente atualiza a própria ficha ao preencher o kit',
+            description: 'Quando o CPF ou o vínculo do link identifica um cliente existente, os dados atuais informados no formulário passam para a ficha. Cada valor substituído fica registrado no histórico com o dado anterior, o novo e a origem "Dados da assinatura". Telefone novo ocupa primeiro um campo livre; se os dois números já estiverem preenchidos, substitui somente o celular e preserva o anterior no histórico.',
+          },
+        ],
+      },
+    ],
+  },
+  {
     version: '1.22.7',
     date: '02/09/2026',
     summary: 'A tela pública de assinatura não aumenta mais sozinha quando a pessoa toca em um campo no iPhone.',
