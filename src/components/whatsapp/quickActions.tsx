@@ -82,7 +82,13 @@ export const QuickActions: React.FC<QuickActionsProps> = ({
 
   return (
     <div className="space-y-2">
-      <p className="text-[9px] font-bold uppercase tracking-wider text-slate-400">Ações rápidas</p>
+      {/* "Nesta conversa", e não "Ações rápidas": o painel tem DOIS blocos de
+          ação — este, que age sobre o atendimento, e o do cliente mais abaixo,
+          que abre prazo, agenda e documento. Os dois se chamavam "Ações
+          rápidas", no mesmo rolar de tela, e um título que serve para os dois
+          não nomeia nenhum. Os dois nomes certos já estavam escritos nos
+          comentários do código desde sempre; faltava chegarem à tela. */}
+      <p className="text-[9px] font-bold uppercase tracking-wider text-slate-400">Nesta conversa</p>
 
       {/* 1. Agir */}
       <div className="grid grid-cols-3 gap-1.5">

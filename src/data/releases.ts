@@ -37,6 +37,38 @@ export type ReleaseNote = {
 
 export const releases: ReleaseNote[] = [
   {
+    version: '1.22.13',
+    date: '03/09/2026',
+    summary: 'Procurar dentro da conversa do WhatsApp — inclusive no que foi dito em áudio.',
+    modules: [
+      {
+        moduleId: 'whatsapp',
+        changes: [
+          {
+            type: 'feature' as const,
+            title: 'Procurar dentro da conversa (Ctrl+F)',
+            description: 'A conversa aberta ganhou busca própria, na lupa do cabeçalho ou por Ctrl+F. Ela varre o HISTÓRICO INTEIRO no banco, e não apenas as mensagens já carregadas na tela: procurar "procuração" numa conversa de três meses devolve as ocorrências de todos os dias, agrupadas por data e com a frase em volta de cada uma. Clicar em um resultado leva a conversa até aquela mensagem e a acende por um instante. Acento não separa mais — "pericia" encontra "perícia". A busca também alcança o NOME DOS ANEXOS e, sobretudo, a TRANSCRIÇÃO DOS ÁUDIOS: o que o cliente disse num áudio de dois minutos era, até agora, invisível para qualquer busca do sistema; um resultado que vem daí aparece marcado como "no áudio". Vale igual no módulo em tela cheia, no painel flutuante de mensagens e no celular.',
+          },
+          {
+            type: 'fix' as const,
+            title: 'A lista parou de repetir o nome de quem enviou',
+            description: 'Toda mensagem enviada pelo escritório sai com a assinatura do atendente na primeira linha, e a lista de conversas estava mostrando essa linha junto com a prévia — o resultado era "Você: Pedro Montalvão: ok, combinado", com a mesma atribuição escrita duas vezes e metade da largura da prévia gasta com um nome que já está ali ao lado. A prévia agora mostra só a mensagem. O que o cliente escreveu não é alterado.',
+          },
+          {
+            type: 'fix' as const,
+            title: 'Os filtros da lista voltaram a caber por extenso',
+            description: 'As abas "Todas", "Não lidas" e "Minhas" dividiam a barra em partes iguais, então a mais curta sobrava espaço e a mais longa aparecia cortada em "Não…". Cada aba passou a ter a largura do próprio nome. A mesma correção vale para o par "WhatsApp | Equipe" do painel de mensagens.',
+          },
+          {
+            type: 'improvement' as const,
+            title: 'O painel do contato deixou de ter dois blocos com o mesmo nome',
+            description: 'O painel lateral trazia duas seções chamadas "Ações rápidas" na mesma rolagem: uma age sobre o atendimento, a outra abre prazo, agenda e documento do cliente. Passaram a se chamar "Nesta conversa" e "Para o cliente".',
+          },
+        ],
+      },
+    ],
+  },
+  {
     version: '1.22.12',
     date: '03/09/2026',
     summary: 'O certificado de assinatura volta a registrar o identificador da conta Google de quem assinou.',

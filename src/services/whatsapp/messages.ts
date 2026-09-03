@@ -2,6 +2,7 @@
 import { supabase } from '../../config/supabase';
 import type { WhatsAppMessage, SendMediaInput, UploadedMedia, WhatsAppDeleteScope, WaReacao } from '../../types/whatsapp.types';
 import { MSG_TABLE, MEDIA_BUCKET, attachSignedUrls, invokeFn, extOf } from './shared';
+import { buildSearchTextVariants } from '../../utils/search';
 
 /**
  * Retorno de um envio. `reopened` avisa que a conversa estava encerrada e voltou
@@ -67,7 +68,96 @@ function ehColunaInexistente(erro: { code?: string; message?: string } | null): 
     || (erro.message ?? '').includes('sender_role');
 }
 
+/**
+ * Colunas de um ACHADO da busca dentro da conversa.
+ *
+ * Deliberadamente curta: a busca varre o histórico inteiro (não a janela
+ * carregada), e o resultado é uma lista de linhas de uma frase. Trazer mídia,
+ * assinaturas e o payload de cada mensagem para desenhar um trecho de texto
+ * seria pagar o preço da thread toda para não mostrar nenhuma bolha.
+ *
+ * Literal numa linha só pelo mesmo motivo das listas acima: o supabase-js tipa
+ * o retorno a partir do TEXTO da consulta.
+ */
+const MSG_COLUMNS_BUSCA = 'id, conversation_id, direction, type, content, transcription_text, file_name, wa_timestamp';
+
+/** Um acerto da busca — o suficiente para a linha do resultado e para o salto. */
+export interface WhatsAppMessageHit {
+  id: string;
+  conversation_id: string;
+  direction: 'in' | 'out';
+  type: string;
+  content: string | null;
+  transcription_text: string | null;
+  file_name: string | null;
+  wa_timestamp: string;
+}
+
+/** Escapa o que o PostgREST leria como sintaxe dentro do `or(...)`. */
+function padraoIlike(bruto: string): string {
+  const escapado = bruto.replace(/[\\"]/g, (c) => `\\${c}`);
+  return `"%${escapado}%"`;
+}
+
+/**
+ * Repete o ILIKE pelas alternativas acentuadas, do mesmo jeito que o e-mail e o
+ * feed já fazem: o PostgREST não oferece comparação sem acento, e "pericia"
+ * precisa achar "perícia" — é assim que a palavra chega digitada com pressa.
+ */
+function ouIlikeSemAcento(termo: string, colunas: readonly string[]): string {
+  return buildSearchTextVariants(termo)
+    .flatMap((variante) => colunas.map((col) => `${col}.ilike.${padraoIlike(variante)}`))
+    .join(',');
+}
+
 export const messagesApi = {
+  /**
+   * BUSCA DENTRO DA CONVERSA — no histórico inteiro, não na janela carregada.
+   *
+   * A thread abre com os 60 últimos e pagina para trás sob demanda. Procurar
+   * "onde ele mandou o RG" ou "quanto ficou combinado" no que está na tela só
+   * responde quando a resposta é recente; em qualquer conversa de verdade o
+   * atendente rolava às cegas até desistir e perguntar de novo ao cliente —
+   * que é a pergunta que o escritório já fez e não devia repetir.
+   *
+   * Por isso a varredura é NO BANCO. O filtro é o mesmo grupo de linhas que
+   * monta a thread (`conversationId` aceita as irmãs de outro canal do mesmo
+   * contato), então o resultado cobre a pessoa e não o número por onde ela
+   * escreveu.
+   *
+   * TRÊS COLUNAS, e a terceira é a que surpreende:
+   *   · `content` — o texto e a legenda da mídia;
+   *   · `file_name` — achar o anexo pelo nome ("procuracao.pdf");
+   *   · `transcription_text` — O QUE FOI DITO NO ÁUDIO. Metade do que um
+   *     cliente conta chega em áudio de dois minutos, e até aqui essa metade
+   *     era invisível para qualquer busca do CRM.
+   *
+   * Apagadas ficam de fora: o histórico não as mostra, e trazê-las no
+   * resultado seria oferecer um salto para uma bolha que não existe.
+   */
+  async searchMessages(
+    conversationId: string | string[],
+    term: string,
+    opts?: { limit?: number },
+  ): Promise<WhatsAppMessageHit[]> {
+    const ids = Array.isArray(conversationId) ? conversationId : [conversationId];
+    const termo = term.trim();
+    // Uma letra casa com quase tudo: a lista viria cheia e sem serventia, e a
+    // varredura custaria o histórico inteiro para nada.
+    if (ids.length === 0 || termo.length < 2) return [];
+
+    let q = supabase.from(MSG_TABLE).select(MSG_COLUMNS_BUSCA);
+    q = ids.length === 1 ? q.eq('conversation_id', ids[0]) : q.in('conversation_id', ids);
+    const { data, error } = await q
+      .is('deleted_at', null)
+      .or(ouIlikeSemAcento(termo, ['content', 'transcription_text', 'file_name']))
+      .order('wa_timestamp', { ascending: false })
+      .limit(opts?.limit ?? 80);
+
+    if (error) throw new Error(error.message);
+    return ((data || []) as unknown) as WhatsAppMessageHit[];
+  },
+
   /**
    * O TEXTO de uma mensagem, para quem só precisa da prévia do aviso.
    *

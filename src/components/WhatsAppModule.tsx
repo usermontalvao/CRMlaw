@@ -124,6 +124,7 @@ import { DockedDetailsToggle } from './whatsapp/DockedDetailsToggle';
 import { ConversationList } from './whatsapp/conversationList';
 import { ThreadSkeleton } from './whatsapp/skeletons';
 import { resolveInboxKey, isTypingTarget } from './whatsapp/inboxKeyboard';
+import { ThreadSearch } from './whatsapp/threadSearch';
 import { WaLightbox } from './whatsapp/lightbox';
 import { WaAudioDeviceButton } from './whatsapp/audioDeviceSettings';
 import { WaNotifyBell } from './whatsapp/notifyBell';
@@ -356,6 +357,15 @@ const WhatsAppModule: React.FC<WhatsAppModuleProps> = ({ openConversationId, ope
   );
   // Menu "⋮" do cabeçalho da thread (agrupa as ações em telas estreitas).
   const [headerMenuOpen, setHeaderMenuOpen] = useState(false);
+  /**
+   * Procurar DENTRO da conversa aberta (ver `threadSearch.tsx`).
+   *
+   * Mora aqui, e não dentro do componente, por duas razões: o Esc precisa
+   * encontrá-la na mesma pilha de camadas das outras (`overlayOpen`, logo
+   * abaixo), e o Ctrl+F precisa poder ABRI-LA — um atalho que só funciona com
+   * o painel já aberto não é atalho.
+   */
+  const [threadSearchOpen, setThreadSearchOpen] = useState(false);
   // Menu "+" do composer (documento, modelo, agendar) — mantém a barra enxuta.
   const [attachMenuOpen, setAttachMenuOpen] = useState(false);
   const [gifOpen, setGifOpen] = useState(false);
@@ -1663,6 +1673,22 @@ const WhatsAppModule: React.FC<WhatsAppModuleProps> = ({ openConversationId, ope
       // problema: ele age sobre a pilha do que ESTE módulo abriu, e quando não
       // há mais nada por cima ele devolve o gesto ao hospedeiro (`exitSurface`),
       // em vez de disputá-lo.
+      // ── Ctrl/Cmd+F: procurar dentro da conversa ──
+      // Fica ACIMA da saída antecipada do modo embutido de propósito: a regra
+      // do widget é espelhar a funcionalidade do módulo, e o motivo daquela
+      // saída são as SETAS (que pertencem à página de trás). O Ctrl+F não tem
+      // esse conflito — só é nosso quando o gesto nasceu dentro deste módulo,
+      // e aí ele substitui a busca do navegador, que só enxerga as bolhas
+      // carregadas na tela e por isso responde "não achei" para o histórico.
+      if ((e.ctrlKey || e.metaKey) && !e.altKey && (e.key === 'f' || e.key === 'F')) {
+        if (!selectedId) return;
+        const dentro = rootRef.current?.contains(e.target as Node)
+          || rootRef.current?.contains(document.activeElement);
+        if (!dentro) return;
+        e.preventDefault();
+        setThreadSearchOpen(true);
+        return;
+      }
       if (embedded && e.key !== 'Escape') return;
       const alvo = document.activeElement;
       const action = resolveInboxKey(e, {
@@ -1677,7 +1703,7 @@ const WhatsAppModule: React.FC<WhatsAppModuleProps> = ({ openConversationId, ope
         // camadas; a busca no DOM cobre as caixas antigas que ainda não o usam.
         dialogOpen: escapeLayerCount() > 0 || !!document.querySelector('[role="dialog"]'),
         recording,
-        overlayOpen: attachMenuOpen || gifOpen || mediaLibOpen || emojiOpen || slashActive,
+        overlayOpen: attachMenuOpen || gifOpen || mediaLibOpen || emojiOpen || slashActive || threadSearchOpen,
         composing: !!editing || !!replyTo,
         hasDraft: draft.trim().length > 0,
         canExitSurface: embedded && !!onEscapeExit,
@@ -1687,7 +1713,7 @@ const WhatsAppModule: React.FC<WhatsAppModuleProps> = ({ openConversationId, ope
       // ── Esc: desfaz o topo da pilha (ver `escapeAction`) ──
       if (action.kind === 'cancelRecording') { stopRecording(false); return; }
       if (action.kind === 'closeOverlay') {
-        setAttachMenuOpen(false); setGifOpen(false); setMediaLibOpen(false);
+        setAttachMenuOpen(false); setGifOpen(false); setMediaLibOpen(false); setThreadSearchOpen(false);
         // O menu de modelos não tem estado próprio: ele aparece enquanto o
         // rascunho começa com "/", então fechá-lo é apagar a barra.
         if (slashActive) setDraft('');
@@ -1728,7 +1754,17 @@ const WhatsAppModule: React.FC<WhatsAppModuleProps> = ({ openConversationId, ope
   }, [
     filteredIds, selectedId, search, embedded, onEscapeExit,
     draft, editing, replyTo, recording, attachMenuOpen, gifOpen, mediaLibOpen, emojiOpen, slashActive,
+    threadSearchOpen,
   ]);
+
+  /**
+   * Trocar de conversa fecha a busca.
+   *
+   * Deixá-la aberta levaria o termo digitado para dentro de outro atendimento
+   * — e o resultado, que fala da conversa anterior, viraria um atalho para
+   * uma mensagem que não está mais na tela.
+   */
+  useEffect(() => { setThreadSearchOpen(false); }, [selectedId]);
 
   /**
    * Ctrl/⌘+A com a conversa aberta seleciona A CONVERSA, não a página.
@@ -3020,7 +3056,7 @@ const WhatsAppModule: React.FC<WhatsAppModuleProps> = ({ openConversationId, ope
           </div>
         ) : (
           <>
-            <header className={`flex items-center gap-2 sm:gap-3 border-b border-black/[0.06] ${molduraBg} ${embedded ? 'px-2.5 py-2' : 'px-2.5 sm:px-5 py-2.5'}`}>
+            <header className={`relative flex items-center gap-2 sm:gap-3 border-b border-black/[0.06] ${molduraBg} ${embedded ? 'px-2.5 py-2' : 'px-2.5 sm:px-5 py-2.5'}`}>
               {isMobile && (
                 <button onClick={() => setSelectedId(null)} title="Voltar à lista"
                   className="flex-shrink-0 -ml-1 w-9 h-9 rounded-lg text-slate-600 hover:bg-[#f3f2ef] flex items-center justify-center transition">
@@ -3161,6 +3197,14 @@ const WhatsAppModule: React.FC<WhatsAppModuleProps> = ({ openConversationId, ope
                     mas viewport desktop) e no mobile, viram o menu "⋮". Usar o flag
                     `isMobile` (consciente do contêiner) em vez de breakpoint de viewport. */}
                 <div className={`${isMobile ? 'hidden' : 'flex'} items-center gap-1.5`}>
+                {/* Procurar dentro da conversa. Primeiro do grupo porque é a
+                    única ação de LEITURA aqui — as outras mexem no atendimento,
+                    e essa distância evita o clique errado com a mão apressada. */}
+                <button onClick={() => setThreadSearchOpen(o => !o)} title="Procurar nesta conversa (Ctrl+F)"
+                  aria-label="Procurar nesta conversa" aria-pressed={threadSearchOpen}
+                  className={`flex-shrink-0 w-9 h-9 rounded-lg flex items-center justify-center transition ${threadSearchOpen ? 'bg-amber-100 text-amber-700 hover:bg-amber-200' : 'bg-[#f3f2ef] hover:bg-amber-50 text-slate-600 hover:text-amber-700'}`}>
+                  <Search size={16} />
+                </button>
                 {/* Comandos de fila (atribuição direta, sem transferência) */}
                 {acoes.assumir && !selected.is_blocked && selected.status !== 'closed' && !selected.awaiting_accept && selected.assigned_user_id !== user?.id && (
                   <button onClick={handleAssume} title={selected.assigned_user_id ? 'Assumir este atendimento' : 'Assumir da fila'}
@@ -3266,6 +3310,7 @@ const WhatsAppModule: React.FC<WhatsAppModuleProps> = ({ openConversationId, ope
                           className="fixed inset-0 z-40 cursor-default bg-transparent"
                           onClick={() => setHeaderMenuOpen(false)} />
                         <div role="menu" className="absolute right-0 top-11 z-50 w-56 rounded-xl bg-white shadow-xl border border-[#e7e5df] py-1.5 overflow-hidden">
+                          <button className={item} onClick={run(() => setThreadSearchOpen(true))}><Search size={16} className="text-slate-400" /> Procurar na conversa</button>
                           {!panelDocked && (
                             <button className={item} onClick={run(() => setMobilePanelOpen(true))}><Info size={16} className="text-slate-400" /> Detalhes do contato</button>
                           )}
@@ -3295,6 +3340,19 @@ const WhatsAppModule: React.FC<WhatsAppModuleProps> = ({ openConversationId, ope
                   })()}
                 </div>
               </div>
+
+            {/* A busca cobre o cabeçalho enquanto está aberta — ver o topo de
+                `threadSearch.tsx` para por que sobreposta, e por que ela mora
+                DENTRO do <header> em vez de medir a altura dele. */}
+            {threadSearchOpen && (
+              <ThreadSearch
+                conversationIds={threadIds.length > 0 ? threadIds : [selected.id]}
+                contactName={privateMode ? maskName(conversationName(selected)) : conversationName(selected)}
+                privateMode={privateMode}
+                onJump={openConversationAt}
+                onClose={() => setThreadSearchOpen(false)}
+              />
+            )}
             </header>
 
             {/* Colisão de atendimento. Numa inbox compartilhada, dois atendentes
@@ -4085,7 +4143,8 @@ const WhatsAppModule: React.FC<WhatsAppModuleProps> = ({ openConversationId, ope
               parou — ninguém precisa sair do atendimento para abrir o módulo de
               Clientes e inventar uma ficha. */}
           <div className="space-y-1.5">
-            <p className="text-[9px] font-bold uppercase tracking-wider text-slate-400">Ações rápidas</p>
+            {/* Ver a nota em `quickActions.tsx`: o outro bloco é "Nesta conversa". */}
+            <p className="text-[9px] font-bold uppercase tracking-wider text-slate-400">Para o cliente</p>
             <div className="grid grid-cols-2 gap-1.5">
               {[
                 { label: 'Lançamento', icon: <HandCoins size={15} />, motivo: 'fazer um lançamento', on: (clientId: string, clientName: string) => openWa({ type: 'financial_create', clientId, clientName: clientName || undefined }) },

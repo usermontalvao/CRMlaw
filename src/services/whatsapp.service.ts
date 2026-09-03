@@ -26,6 +26,7 @@ export type {
   WhatsAppAiAssistant, WhatsAppAiAssistantInput, WhatsAppAiAssistantMode, WhatsAppAiActionRef,
   WhatsAppAiExecution, WhatsAppAiFollowup, WhatsAppAiConversationState, WhatsAppAiTargetOption,
 } from '../types/whatsapp.types';
+export type { WhatsAppMessageHit } from './whatsapp/messages';
 export { WaAiValidationError } from './whatsapp/aiAssistants';
 export { tipoDeMidia, MEDIA_LIBRARY_MAX_BYTES } from './whatsapp/mediaLibrary';
 export type { WhatsAppMediaLibraryItem, WhatsAppMediaLibraryType } from '../types/whatsapp.types';

@@ -3,6 +3,8 @@ import assert from 'node:assert/strict';
 import {
   formatCallDuration, threadCallLabel, conversationPreview, conversationActivityAt,
 } from './threadCalls.ts';
+// A outra redação da regra de assinatura, para as duas nunca divergirem.
+import { stripAgentSignature } from './waRichText.ts';
 
 test('duração se lê, não se calcula', () => {
   assert.equal(formatCallDuration(42), '42 s');
@@ -144,6 +146,46 @@ test('sem chamada, a linha é a mensagem — e o "Você:" só vale para a mensag
 
   const entrou = conversationPreview({ ...base, messageDirection: 'in' });
   assert.equal(entrou.prefix, '');
+});
+
+test('a prévia não repete a assinatura do atendente', () => {
+  // É o que o banco guarda: `last_message_preview` sai do `content` cru, e o
+  // compositor cola `*Nome:*` na primeira linha de todo envio manual. Sem o
+  // corte, a linha dizia "Você: Pedro Montalvão: Ok" — a mesma atribuição duas
+  // vezes, ocupando metade da prévia.
+  const linha = conversationPreview({ ...base, messagePreview: '*Pedro Montalvão:*\nOk, qualquer coisa me avise.' });
+  assert.equal(linha.prefix, 'Você: ');
+  assert.equal(linha.text, 'Ok, qualquer coisa me avise.');
+});
+
+test('o que o CLIENTE escreveu não é mexido, nem quando parece uma assinatura', () => {
+  const linha = conversationPreview({
+    ...base, messageDirection: 'in', messagePreview: '*Fulano:*\nele mandou dizer isso',
+  });
+  assert.equal(linha.prefix, '');
+  assert.equal(linha.text, '*Fulano:*\nele mandou dizer isso');
+});
+
+test('a prévia que é SÓ a assinatura não deixa a linha em branco por engano', () => {
+  // Uma linha vazia depois do prefixo é a única sobra possível; o que importa
+  // é a hora continuar sendo a da mensagem, para a fila não reordenar.
+  const linha = conversationPreview({ ...base, messagePreview: '*Pedro:*\n' });
+  assert.equal(linha.kind, 'message');
+  assert.equal(linha.at, '2026-08-19T03:15:48Z');
+});
+
+test('as duas redações da regra de assinatura concordam', () => {
+  const casos = [
+    '*Pedro Montalvão:*\nbom dia',
+    '*Dra. Ana:*\nsegue o documento',
+    '*bom dia*',
+    'sem assinatura nenhuma',
+    '*Pedro:* na mesma linha, sem quebra',
+  ];
+  for (const caso of casos) {
+    const pela_previa = conversationPreview({ ...base, messagePreview: caso }).text;
+    assert.equal(pela_previa, stripAgentSignature(caso).trim(), caso);
+  }
 });
 
 test('a chamada mais nova ganha da mensagem — e leva a hora junto', () => {

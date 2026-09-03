@@ -163,6 +163,18 @@ export function threadCallLabel(call: ThreadCallInput): ThreadCallLabel {
 // sozinha. Prévia e thread erradas uma em relação à outra é pior do que este
 // arquivo ter dois assuntos vizinhos.
 
+/**
+ * Tira o `*Nome:*` que o compositor cola na primeira linha do envio manual.
+ *
+ * CÓPIA DELIBERADA de `stripAgentSignature` (waRichText). Este arquivo é
+ * importado por um teste e não tem import nenhum de propósito — import
+ * relativo sem extensão na cadeia derruba o `npm test` deste projeto. A regra
+ * é uma linha; o teste ao lado confronta as duas redações caso a caso.
+ */
+function semAssinaturaDoAgente(texto: string): string {
+  return texto.replace(/^\*[^*\n]+:\*\n/, '');
+}
+
 export interface ConversationPreviewInput {
   /** Prévia congelada da última mensagem (a coluna `last_message_preview`). */
   messagePreview: string | null | undefined;
@@ -225,7 +237,20 @@ export function conversationPreview(input: ConversationPreviewInput): Conversati
     };
   }
 
-  const texto = (input.messagePreview || '').trim();
+  // A ASSINATURA DO ATENDENTE NÃO ENTRA NA PRÉVIA.
+  //
+  // O compositor cola `*Dr. Pedro:*\n` na frente de todo envio manual, e a
+  // coluna `last_message_preview` é escrita no banco a partir do `content` CRU
+  // (ver `wa_message_preview`). A bolha sempre escondeu essa linha; a lista,
+  // não — e o resultado era a linha dizendo "Você: Pedro Montalvão: ok",
+  // atribuindo a mesma frase duas vezes e gastando meia largura da prévia com
+  // o nome de quem já está escrito ali ao lado. Em muitas inboxes TODA linha
+  // enviada tinha esse prefixo, então a prévia dizia sempre a mesma coisa.
+  //
+  // Só no que SAIU daqui: um cliente que escreva "*Fulano:*" na primeira linha
+  // está escrevendo isso mesmo, e apagá-lo seria mentir sobre a mensagem dele.
+  const bruta = (input.messagePreview || '').trim();
+  const texto = input.messageDirection === 'out' ? semAssinaturaDoAgente(bruta) : bruta;
   if (!msgAt && !texto) return PREVIA_VAZIA;
 
   return {

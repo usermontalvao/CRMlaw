@@ -14,6 +14,18 @@
 // esbarra na aba seguinte quando passa de dois dígitos. E quem pediu "reduzir
 // movimento" recebe a pastilha sem deslizar — o estado continua no
 // `aria-selected`, que nunca dependeu de pixel.
+//
+// ── CADA ABA TEM A LARGURA DO SEU NOME ─────────────────────────────────────
+// A primeira versão dividia a barra em PARTES IGUAIS (`flex-1 min-w-0`), e o
+// resultado era o oposto do que o desenho queria: "Todas" recebia 68 px para
+// dizer 35, e "Não lidas 1" recebia os mesmos 68 px para dizer 82 — e ficava
+// cortada em "Não…". A inbox tinha acabado de reorganizar a barra inteira PARA
+// que os três nomes coubessem por extenso, e a repartição igual desfazia isso
+// em silêncio, sem nunca aparecer numa medição da barra (que fecha certo).
+//
+// `min-w-fit` é o conserto: cada aba nunca encolhe abaixo do próprio conteúdo,
+// e a sobra continua repartida entre elas. Medido na largura mais apertada do
+// CRM (211 px de barra): 51 + 82 + 77 e ainda sobram 1,5 px.
 import React, { useId } from 'react';
 import { motion, useReducedMotion } from 'framer-motion';
 
@@ -50,7 +62,9 @@ export function SegmentedTabs<T extends string>({
     <div
       role="tablist"
       aria-label={rest['aria-label']}
-      className={`flex items-center gap-0.5 p-0.5 rounded-[10px] bg-slate-900/[0.045] ${className}`}
+      // `overflow-x-auto` é rede, não desenho: com uma fonte de sistema maior
+      // (ou um idioma de palavras longas) a barra rola em vez de esconder uma aba.
+      className={`flex items-center gap-0.5 overflow-x-auto p-0.5 rounded-[10px] bg-slate-900/[0.045] ${className}`}
     >
       {items.map(item => {
         const ativa = value === item.key;
@@ -64,7 +78,7 @@ export function SegmentedTabs<T extends string>({
             aria-label={item.ariaLabel}
             title={item.title}
             onClick={() => onChange(item.key)}
-            className={`relative flex-1 min-w-0 inline-flex items-center justify-center gap-1.5 px-2 ${ALTURA[size]} rounded-[8px] text-[12px] font-medium whitespace-nowrap transition-colors duration-150 ${
+            className={`relative flex-1 min-w-fit inline-flex items-center justify-center gap-1.5 px-1.5 ${ALTURA[size]} rounded-[8px] text-[12px] font-medium whitespace-nowrap transition-colors duration-150 ${
               ativa ? 'text-slate-900' : 'text-slate-500 hover:text-slate-700'
             }`}
           >
@@ -78,7 +92,7 @@ export function SegmentedTabs<T extends string>({
                   : { type: 'spring', stiffness: 520, damping: 38, mass: 0.6 }}
               />
             )}
-            <span className="relative truncate">{item.label}</span>
+            <span className="relative">{item.label}</span>
             {(item.count ?? 0) > 0 && (
               <span
                 className={`relative text-[10px] font-bold tabular-nums ${ativa ? 'text-slate-500' : 'text-[#f27a23]'}`}
