@@ -4427,3 +4427,22 @@ div.pericia-light-modal[class*="fixed"][class*="inset-0"][class*="z-"] {
 .ai-typing-dot { animation: ai-typing-bounce 1.2s ease-in-out infinite; }
 .ai-typing-dot:nth-child(2) { animation-delay: 0.15s; }
 .ai-typing-dot:nth-child(3) { animation-delay: 0.3s; }
+
+/* Evita o zoom automático do Safari ao focar campos com fonte menor que 16px.
+   O seletor parte do body para também alcançar modais/portais da assinatura pública. */
+@supports (-webkit-touch-callout: none) {
+  @media (max-width: 767px) {
+    #jurius-app input:not([type="hidden"]):not([type="checkbox"]):not([type="radio"]):not([type="range"]):not([type="color"]):not([type="file"]):not([type="button"]):not([type="submit"]):not([type="reset"]),
+    #jurius-app textarea,
+    #jurius-app select {
+      font-size: 16px !important;
+    }
+
+    /* Mantém a hierarquia dos controles que já foram desenhados acima de 16px. */
+    #jurius-app :is(input, textarea, select).text-lg { font-size: 1.125rem !important; }
+    #jurius-app :is(input, textarea, select).text-xl { font-size: 1.25rem !important; }
+    #jurius-app :is(input, textarea, select).text-2xl { font-size: 1.5rem !important; }
+    #jurius-app :is(input, textarea, select).text-3xl { font-size: 1.875rem !important; }
+    #jurius-app :is(input, textarea, select).text-4xl { font-size: 2.25rem !important; }
+  }
+}

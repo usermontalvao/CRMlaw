@@ -37,6 +37,23 @@ export type ReleaseNote = {
 
 export const releases: ReleaseNote[] = [
   {
+    version: '1.22.7',
+    date: '02/09/2026',
+    summary: 'A tela pública de assinatura não aumenta mais sozinha quando a pessoa toca em um campo no iPhone.',
+    modules: [
+      {
+        moduleId: 'assinatura-publica',
+        changes: [
+          {
+            type: 'fix' as const,
+            title: 'Preencher um campo no iPhone não dá mais zoom na página',
+            description: 'O Safari ampliava automaticamente a tela ao tocar em campos com texto menor que 16 pixels. Isso acontecia principalmente na identificação da assinatura e obrigava a pessoa a diminuir a página com dois dedos antes de continuar. Os campos agora usam o tamanho mínimo exigido pelo navegador no celular, inclusive dentro dos modais da assinatura pública, sem bloquear o zoom manual e sem reduzir os campos maiores de telefone e código.',
+          },
+        ],
+      },
+    ],
+  },
+  {
     version: '1.22.6',
     date: '02/09/2026',
     summary: 'O botão de assinar não aparecia no iPhone, e uma falha no carregamento deixava a página em branco sem saída. Os dois foram corrigidos, e o código do link agora pode ser pesquisado no painel.',
