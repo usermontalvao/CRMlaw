@@ -37,6 +37,28 @@ export type ReleaseNote = {
 
 export const releases: ReleaseNote[] = [
   {
+    version: '1.22.11',
+    date: '03/09/2026',
+    summary: 'O link de assinatura deixa de prender o iPhone em “Conferindo seu acesso” enquanto os anexos são preparados.',
+    modules: [
+      {
+        moduleId: 'assinatura-publica',
+        changes: [
+          {
+            type: 'fix' as const,
+            title: 'Documento principal abre primeiro no iPhone',
+            description: 'A abertura aguardava o download antecipado de todos os anexos e registrava a mesma visualização duas vezes antes de liberar a leitura. Agora o documento principal aparece assim que estiver pronto, os anexos continuam sendo preparados sem bloquear a tela e o botão de assinar só é liberado quando o kit estiver seguro para continuar.',
+          },
+          {
+            type: 'fix' as const,
+            title: 'Cortina de carregamento não cancela mais a própria saída',
+            description: 'A animação de desaparecimento substituía e cancelava o temporizador responsável por remover a cortina. Os dois tempos agora são independentes, inclusive no WebKit do iPhone.',
+          },
+        ],
+      },
+    ],
+  },
+  {
     version: '1.22.10',
     date: '03/09/2026',
     summary: 'A assinatura automática volta a respeitar o campo marcado no template, sem subir para perto da data.',

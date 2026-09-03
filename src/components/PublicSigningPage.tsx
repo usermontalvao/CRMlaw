@@ -41,6 +41,7 @@ import {
   sobe,
 } from './publicSigning/ui';
 import { canalDoRegistro, primeiroNome, type CanalDeIdentidade } from '../utils/assinaturaPublica';
+import { canOpenPublicSigningModal, isPublicSigningReaderReady } from '../utils/publicSigningReadiness';
 
 pdfjs.GlobalWorkerOptions.workerSrc = `//unpkg.com/pdfjs-dist@${pdfjs.version}/build/pdf.worker.min.mjs`;
 
@@ -836,6 +837,7 @@ const PublicSigningPage: React.FC<PublicSigningPageProps> = ({ token }) => {
   
   // Documentos anexos
   const [attachments, setAttachments] = useState<{ name: string; url: string; rendered?: boolean; prefetched?: boolean; isDocx?: boolean }[]>([]);
+  const [attachmentManifestReady, setAttachmentManifestReady] = useState(false);
   const attachmentRefs = useRef<(HTMLDivElement | null)[]>([]);
   const attachmentBlobRef = useRef<(Blob | null)[]>([]);
   const attachmentObjectUrlRef = useRef<(string | null)[]>([]);
@@ -888,32 +890,43 @@ const PublicSigningPage: React.FC<PublicSigningPageProps> = ({ token }) => {
   // página indefinidamente — após o prazo, seguimos com o documento principal.
   const [loadDeadlineReached, setLoadDeadlineReached] = useState(false);
 
-  // Página 100% carregada: step success + documento carregado + anexos DOCX todos renderizados
+  // A leitura e a assinatura têm marcos diferentes. No iPhone, esperar baixar
+  // todos os anexos antes de mostrar o documento principal prendia a pessoa na
+  // frase "Conferindo seu acesso" mesmo depois de o acesso já estar confirmado.
   const allAttachmentsRendered = attachments.length === 0 || attachments.every(a => !a.isDocx || a.rendered);
   const mainDocLoaded = isDocx ? (!docxLoading && docxRendered) : (!!pdfUrl && pdfFrameLoaded);
-  const isFullyLoaded =
-    step === 'success' && !!signer && !!request && mainDocLoaded &&
-    (allAttachmentsRendered || loadDeadlineReached);
-
-  const canOpenSignModal = isFullyLoaded;
+  const readerReady = isPublicSigningReaderReady({
+    step,
+    hasSigner: !!signer,
+    hasRequest: !!request,
+    mainDocumentLoaded: mainDocLoaded,
+  });
+  const canOpenSignModal = canOpenPublicSigningModal({
+    readerReady,
+    attachmentManifestReady,
+    allAttachmentsRendered,
+    loadDeadlineReached,
+  });
 
   // ── Overlay de carregamento: visível desde o início, tempo mínimo de 10 s ──
   /** O compartilhamento faz rede antes de abrir a folha; sem isto o botão fica mudo. */
   const [sharing, setSharing] = useState(false);
   const [overlayVisible, setOverlayVisible] = useState(true);   // começa visível
   const [overlayFading, setOverlayFading] = useState(false);
-  const overlayTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const pageLoadTimeRef  = useRef<number>(Date.now());           // marca o momento do mount
 
   // Dispensa o overlay imediatamente quando ocorre erro ou já assinado
   useEffect(() => {
     if (step === 'error' || step === 'already_signed') {
-      if (overlayTimerRef.current) clearTimeout(overlayTimerRef.current);
-      setOverlayFading(true);
-      overlayTimerRef.current = setTimeout(() => {
+      const fadeTimer = window.setTimeout(() => setOverlayFading(true), 0);
+      const hideTimer = window.setTimeout(() => {
         setOverlayVisible(false);
         setOverlayFading(false);
       }, 420);
+      return () => {
+        window.clearTimeout(fadeTimer);
+        window.clearTimeout(hideTimer);
+      };
     }
   }, [step]);
 
@@ -923,8 +936,8 @@ const PublicSigningPage: React.FC<PublicSigningPageProps> = ({ token }) => {
    * O piso era de DEZ SEGUNDOS. Num link que abre rápido, o documento já estava
    * pronto atrás da cortina desde o segundo 2 — e a pessoa ficava olhando
    * "Pronto para assinar." por oito segundos, sem nada acontecendo. O piso não
-   * media nada: `isFullyLoaded` já é um sinal honesto (documento principal
-   * renderizado + anexos, ou o prazo-limite).
+   * media nada: `readerReady` já é um sinal honesto de que o documento
+   * principal está legível. Os anexos continuam preparando o botão por baixo.
    *
    * Sobraram dois tempos, e cada um existe por um motivo:
    *
@@ -935,28 +948,28 @@ const PublicSigningPage: React.FC<PublicSigningPageProps> = ({ token }) => {
    * Quem chega depois do piso paga só o respiro.
    */
   useEffect(() => {
-    if (isFullyLoaded && overlayVisible && !overlayFading) {
-      const PISO_MS = 1400;
-      const RESPIRO_MS = 650;
-      const decorrido = Date.now() - pageLoadTimeRef.current;
-      const espera = Math.max(PISO_MS - decorrido, RESPIRO_MS);
-      overlayTimerRef.current = setTimeout(() => {
-        setOverlayFading(true);
-        overlayTimerRef.current = setTimeout(() => {
-          setOverlayVisible(false);
-          setOverlayFading(false);
-        }, 420);
-      }, espera);
-    }
+    if (!readerReady || !overlayVisible) return;
+
+    const PISO_MS = 1400;
+    const RESPIRO_MS = 650;
+    const decorrido = Date.now() - pageLoadTimeRef.current;
+    const espera = Math.max(PISO_MS - decorrido, RESPIRO_MS);
+    const fadeTimer = window.setTimeout(() => setOverlayFading(true), espera);
+    const hideTimer = window.setTimeout(() => {
+      setOverlayVisible(false);
+      setOverlayFading(false);
+    }, espera + 420);
+
     return () => {
-      if (overlayTimerRef.current) clearTimeout(overlayTimerRef.current);
+      window.clearTimeout(fadeTimer);
+      window.clearTimeout(hideTimer);
     };
-  }, [isFullyLoaded, overlayVisible, overlayFading]);
+  }, [readerReady, overlayVisible]);
 
   /**
    * A ESPERA QUE NÃO TERMINA.
    *
-   * A cortina de abertura só saía por `isFullyLoaded`. Se o documento principal
+   * A cortina de abertura só saía por `readerReady`. Se o documento principal
    * nunca confirmasse o render — docx-preview que pendura, download que morre
    * no meio, aparelho que não dá conta do arquivo — ela girava a roda PARA
    * SEMPRE, e a única saída de quem estava do outro lado era fechar a aba e
@@ -969,10 +982,10 @@ const PublicSigningPage: React.FC<PublicSigningPageProps> = ({ token }) => {
    */
   const [esperaTravada, setEsperaTravada] = useState(false);
   useEffect(() => {
-    if (isFullyLoaded) { setEsperaTravada(false); return; }
+    if (readerReady) { setEsperaTravada(false); return; }
     const t = window.setTimeout(() => setEsperaTravada(true), 32_000);
     return () => window.clearTimeout(t);
-  }, [isFullyLoaded]);
+  }, [readerReady]);
 
   // Prazo-limite: libera o requisito de "todos os anexos renderizados" após 18 s.
   // Cobre o caso comum de um anexo DOCX que não confirma o render (overlay preso
@@ -1434,7 +1447,7 @@ const PublicSigningPage: React.FC<PublicSigningPageProps> = ({ token }) => {
   }, [queuedOpenSignModal, canOpenSignModal, isSignModalOpen]);
 
   useEffect(() => {
-    if (!isFullyLoaded) return;
+    if (!canOpenSignModal) return;
     if (googleAuthPreloadedRef.current) return;
     googleAuthPreloadedRef.current = true;
 
@@ -1458,7 +1471,7 @@ const PublicSigningPage: React.FC<PublicSigningPageProps> = ({ token }) => {
 
     const id = window.setTimeout(preload, 800);
     return () => window.clearTimeout(id);
-  }, [isFullyLoaded]);
+  }, [canOpenSignModal]);
 
   /**
    * Dimensiona o canvas quando a etapa de assinatura entra em cena — e de novo
@@ -2421,6 +2434,7 @@ const PublicSigningPage: React.FC<PublicSigningPageProps> = ({ token }) => {
   const loadSignerData = async () => {
     try {
       setStep('loading');
+      setAttachmentManifestReady(false);
       const data = await signatureService.getPublicSigningBundle(token);
       
       if (!data) {
@@ -2460,7 +2474,11 @@ const PublicSigningPage: React.FC<PublicSigningPageProps> = ({ token }) => {
       if (draft?.locationData) setLocationData(draft.locationData);
       draftLoadedRef.current = true;
       if (data.creator) setCreator(data.creator);
+
+      // O acesso já foi confirmado. Liberar o render principal agora impede
+      // que downloads auxiliares mantenham o iPhone preso na tela de abertura.
       if (data.signer.status !== 'signed') {
+        setStep('success');
         void registrarVisualizacao(token, data.signer.id);
       }
 
@@ -2508,32 +2526,10 @@ const PublicSigningPage: React.FC<PublicSigningPageProps> = ({ token }) => {
 
         const loadedAttachments = results.filter(Boolean) as { name: string; url: string; rendered?: boolean; prefetched?: boolean; isDocx?: boolean }[];
         setAttachments(loadedAttachments);
-
-        // Prefetch DOCX em paralelo (para renderizar sem esperar fetch sequencial)
-        const prefetchTargets = loadedAttachments
-          .map((a, i) => ({ a, i }))
-          .filter((x) => !!x.a.isDocx);
-
-        const concurrency = 3;
-        let cursor = 0;
-        const workers = new Array(Math.min(concurrency, prefetchTargets.length)).fill(0).map(async () => {
-          while (cursor < prefetchTargets.length) {
-            const current = prefetchTargets[cursor++];
-            try {
-              if (attachmentBlobRef.current[current.i]) continue;
-              const res = await fetch(current.a.url);
-              if (!res.ok) continue;
-              const blob = await res.blob();
-              attachmentBlobRef.current[current.i] = blob;
-              setAttachments((prev) => prev.map((p, idx) => (idx === current.i ? { ...p, prefetched: true } : p)));
-            } catch {
-              // ignore
-            }
-          }
-        });
-
-        await Promise.all(workers);
+      } else {
+        setAttachments([]);
       }
+      setAttachmentManifestReady(true);
 
       if (data.request.signature_model === 'per_document' && data.signer.status === 'signed') {
         try {
@@ -2553,10 +2549,6 @@ const PublicSigningPage: React.FC<PublicSigningPageProps> = ({ token }) => {
 
       if (data.signer.status === 'signed') {
         setStep('already_signed');
-      } else {
-        // Registrar visualização (com IP e aparelho) — ver registrarVisualizacao.
-        await registrarVisualizacao(token, data.signer.id);
-        setStep('success');
       }
     } catch (e: any) {
       console.error('Erro ao carregar dados do signatário:', e);
@@ -3593,7 +3585,7 @@ const PublicSigningPage: React.FC<PublicSigningPageProps> = ({ token }) => {
           <TelaDeAbertura
             docName={request?.document_name}
             signerName={signer?.name}
-            pronto={isFullyLoaded}
+            pronto={readerReady}
             travado={esperaTravada}
             onRecarregar={() => window.location.reload()}
             allDocNames={request ? [
