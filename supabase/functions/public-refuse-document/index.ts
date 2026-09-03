@@ -1,5 +1,6 @@
 import "jsr:@supabase/functions-js/edge-runtime.d.ts";
 import { createClient } from 'jsr:@supabase/supabase-js@2';
+import { ipDaRequisicao } from '../_shared/client-ip.ts';
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -32,7 +33,10 @@ Deno.serve(async (req: Request) => {
 
     if (!payload || typeof payload !== 'object') return jsonResponse({ success: false, error: 'Invalid payload' }, 400);
 
-    const { token, reason, ip_address, user_agent } = payload;
+    const { token, reason, user_agent } = payload;
+    // Recusa também é evidência: o IP vem do cabeçalho, não do corpo.
+    // Ver `_shared/client-ip.ts`.
+    const ipConferido = ipDaRequisicao(req);
     if (!token) return jsonResponse({ success: false, error: 'Token is required' }, 400);
 
     const refusalReason = String(reason ?? '').trim();
@@ -81,7 +85,7 @@ Deno.serve(async (req: Request) => {
         signer_id: signer.id,
         action: 'refused',
         description: `Assinatura recusada por ${signer.name}: ${refusalReason}`,
-        ip_address: ip_address || null,
+        ip_address: ipConferido,
         user_agent: user_agent || null,
       });
     } catch (e) { console.error('Audit log error (non-blocking):', e); }

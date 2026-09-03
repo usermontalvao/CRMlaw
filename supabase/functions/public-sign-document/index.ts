@@ -1,6 +1,7 @@
 import "jsr:@supabase/functions-js/edge-runtime.d.ts";
 import { createClient } from 'jsr:@supabase/supabase-js@2';
 import { dispatchWaAiLifecycle } from '../_shared/wa-ai-lifecycle-hook.ts';
+import { ipDaRequisicao } from '../_shared/client-ip.ts';
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -384,7 +385,12 @@ Deno.serve(async (req: Request) => {
     if (!payload || typeof payload !== 'object') return jsonResponse({ success: false, error: 'Invalid payload' }, 400);
 
     const action = String(payload?.action ?? 'sign').trim();
-    const { token, signature_image, facial_image, geolocation, signer_name, signer_cpf, signer_phone, auth_provider, auth_email, auth_google_sub, auth_google_picture, ip_address, user_agent, terms_accepted, terms_version, terms_accepted_at, allow_signature_selfie_for_profile, selfie_profile_consent_version, auth_at, facial_captured_at, geolocation_captured_at } = payload;
+
+    // O IP conferido, uma vez só, para a assinatura E para toda linha de
+    // trilha escrita daqui para baixo. O `ip_address` do payload deixou de ser
+    // lido: o front antigo continua mandando o campo, e ele agora é ignorado.
+    const ipConferido = ipDaRequisicao(req);
+    const { token, signature_image, facial_image, geolocation, signer_name, signer_cpf, signer_phone, auth_provider, auth_email, auth_google_sub, auth_google_picture, user_agent, terms_accepted, terms_version, terms_accepted_at, allow_signature_selfie_for_profile, selfie_profile_consent_version, auth_at, facial_captured_at, geolocation_captured_at } = payload;
 
     if (!token) return jsonResponse({ success: false, error: 'Token is required' }, 400);
     const { data: signer, error: signerError } = await supabase.from('signature_signers').select('*').eq('public_token', token).maybeSingle();
@@ -446,7 +452,7 @@ Deno.serve(async (req: Request) => {
           signer_id: signer.id,
           action: 'finalization_failed',
           description: `Finalizacao per_document bloqueada: esperados ${expectedDocumentCount} documento(s), persistidos ${persistedCount}.`,
-          ip_address: ip_address || null,
+          ip_address: ipConferido,
           user_agent: user_agent || null,
         });
         return jsonResponse({
@@ -474,7 +480,7 @@ Deno.serve(async (req: Request) => {
           signer_id: signer.id,
           action: 'finalized',
           description: `Envelope finalizado com ${persistedCount} documento(s) persistido(s).`,
-          ip_address: ip_address || null,
+          ip_address: ipConferido,
           user_agent: user_agent || null,
         });
 
@@ -534,7 +540,7 @@ Deno.serve(async (req: Request) => {
         signer_id: signer.id,
         action: 'finalization_failed',
         description: `Falha na conclusao per_document (${stage}). Persistidos ${persistedCount}/${expectedDocumentCount}. Erro: ${errorMessage}`.slice(0, 1000),
-        ip_address: ip_address || null,
+        ip_address: ipConferido,
         user_agent: user_agent || null,
       });
       return jsonResponse({ success: true, logged: true });
@@ -623,7 +629,16 @@ Deno.serve(async (req: Request) => {
 
     const updates: Record<string, unknown> = {
       status: 'signed', signed_at: new Date().toISOString(),
-      signer_ip: ip_address||null, signer_user_agent: user_agent||null, signer_geolocation: geolocation||null,
+      // O IP é EVIDÊNCIA, e por isso sai do cabeçalho da requisição — não do
+      // corpo. O navegador o buscava na api.ipify.org e o mandava aqui, o que
+      // deixava quem montasse a chamada à mão escolher o próprio IP e ver a
+      // escolha virar fato no dossiê. Ver `_shared/client-ip.ts`, inclusive
+      // para a razão de o `x-forwarded-for` ser lido do fim para o começo.
+      //
+      // Sem cabeçalho não há IP: o que o cliente mandou NÃO é usado como
+      // reserva, senão bastaria omitir o cabeçalho para voltar ao que era.
+      signer_ip: ipConferido,
+      signer_user_agent: user_agent||null, signer_geolocation: geolocation||null,
       verification_hash: generateVerificationHash(),
       name: signer_name??signer.name, cpf: signer_cpf??signer.cpf, phone: signer_phone??signer.phone,
       auth_provider: auth_provider||null,
@@ -675,7 +690,7 @@ Deno.serve(async (req: Request) => {
       const selo = prova
         ? ` · identidade confirmada por ${({ whatsapp: 'WhatsApp', sms: 'SMS', email: 'e-mail', google: 'conta Google' } as Record<string, string>)[prova.channel]} (${prova.identifier})`
         : '';
-      await supabase.from('signature_audit_log').insert({ signature_request_id: signer.signature_request_id, signer_id: signer.id, action: 'signed', description: `Documento assinado por ${signer_name||signer.name}${selo}`, ip_address: ip_address||null, user_agent: user_agent||null });
+      await supabase.from('signature_audit_log').insert({ signature_request_id: signer.signature_request_id, signer_id: signer.id, action: 'signed', description: `Documento assinado por ${signer_name||signer.name}${selo}`, ip_address: ipConferido, user_agent: user_agent||null });
     } catch {}
 
     // No modelo per_document, o e-mail precisa esperar a persistência dos PDFs

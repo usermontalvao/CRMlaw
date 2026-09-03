@@ -37,6 +37,38 @@ export type ReleaseNote = {
 
 export const releases: ReleaseNote[] = [
   {
+    version: '1.22.5',
+    date: '02/09/2026',
+    summary: 'Três correções de segurança na assinatura pública: o link de um signatário deixa de entregar o dos outros, e o IP registrado passa a ser o de verdade.',
+    modules: [
+      {
+        moduleId: 'assinatura-publica',
+        changes: [
+          {
+            type: 'security' as const,
+            title: 'O link de um signatário entregava o dos outros',
+            description: 'Quem abria um documento com vários signatários recebia, junto, a chave de acesso de todos os demais — bastava lê-la para abrir o link alheio e assinar no lugar da pessoa. A consulta devolvia a ficha inteira de cada signatário quando precisava apenas do nome, da data e da imagem da assinatura para montar o certificado. Agora a chave de acesso e o identificador da conta Google não saem mais dessa consulta. O certificado do PDF continua idêntico.',
+          },
+          {
+            type: 'security' as const,
+            title: 'O IP registrado era escolhido por quem assinava',
+            description: 'O endereço de internet que aparece no dossiê e na trilha era descoberto pelo próprio navegador e enviado ao servidor — quem montasse a chamada à mão escrevia o endereço que quisesse, e o sistema registrava como fato. Agora ele é lido da conexão, num cabeçalho que a rede reescreve e que o visitante não consegue alterar. Vale para a assinatura, para a recusa e para o registro de leitura.',
+          },
+          {
+            type: 'security' as const,
+            title: 'Uma rotina aberta permitia inventar eventos na trilha',
+            description: 'Havia uma rotina de registro de leitura acessível a qualquer pessoa, sem exigir o link do documento, que aceitava o endereço de internet que o chamador informasse. Dava para fabricar acessos que nunca existiram na trilha de qualquer assinatura — justamente a peça que serve de prova. Ela não era usada em lugar nenhum do sistema e foi removida.',
+          },
+          {
+            type: 'fix' as const,
+            title: 'Anexar documento assinado a envelope cancelado ou excluído',
+            description: 'A rotina que grava cada documento assinado não conferia o estado da solicitação nem de onde vinha o arquivo: aceitava anexar a um documento na lixeira, bloqueado ou cancelado, e aceitava um caminho de arquivo apontando para qualquer lugar do armazenamento. Agora recusa os dois casos. Documento já arquivado e prazo vencido continuam aceitando o anexo de propósito — quem assinou não pode perder o PDF porque a data virou no segundo seguinte.',
+          },
+        ],
+      },
+    ],
+  },
+  {
     version: '1.22.4',
     date: '02/09/2026',
     summary: 'Um lembrete automático conseguia esconder da caixa de entrada uma conversa de verdade que usava o mesmo número.',
