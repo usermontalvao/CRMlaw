@@ -25,6 +25,10 @@ import {
   abrirContexto, negado, podeComandar, podeResponder, podeVer,
 } from '../_shared/wa-guard.ts';
 import { slimWaRaw } from '../_shared/wa-raw.ts';
+import {
+  deveMarcarComoConversaInterna,
+  envioHumanoRevelaConversa,
+} from '../_shared/wa-internal-conversation.ts';
 import { ACTOR_ESCRITORIO, aplicarReacao, type WaReacao } from '../_shared/wa-reactions.ts';
 import {
   CHANNEL_FLAP_GRACE_MS,
@@ -300,6 +304,11 @@ Deno.serve(async (req: Request) => {
   // Estado da conversa ANTES do envio — é o que decide a reabertura no fim.
   let wasClosed = false;
   let hadOwner = false;
+  let wasInternal = false;
+  // `conversation_id` ausente significa apenas que o chamador veio por telefone;
+  // não significa que a thread não existe. É justamente essa diferença que
+  // impediu o aviso de prazo de esconder a conversa antiga da Robiane.
+  let existedBeforeSend = false;
 
   // Conversa em que o contato JÁ escreveu: o `remote_jid` dela veio do próprio
   // WhatsApp, e é isso que dispensa a consulta de existência lá embaixo.
@@ -311,7 +320,7 @@ Deno.serve(async (req: Request) => {
     // RESPONDER — quem só acompanha não manda mensagem.
     if (!await podeResponder(ctx, conversationId)) return negar();
     const { data: conv } = await admin.from('whatsapp_conversations')
-      .select('contact_phone, instance_id, remote_jid, is_blocked, status, assigned_user_id, last_customer_message_at')
+      .select('contact_phone, instance_id, remote_jid, is_blocked, is_internal, status, assigned_user_id, last_customer_message_at')
       .eq('id', conversationId).maybeSingle();
     if (!conv) return json({ error: 'Conversa não encontrada' }, 404);
     if (conv.is_blocked) return json({ error: 'Contato bloqueado. Desbloqueie para enviar mensagens.' }, 409);
@@ -319,6 +328,7 @@ Deno.serve(async (req: Request) => {
     instanceId = conv.instance_id;
     wasClosed = conv.status === 'closed';
     hadOwner = !!conv.assigned_user_id;
+    wasInternal = conv.is_internal === true;
     destinoJaProvado = !!conv.remote_jid && !!conv.last_customer_message_at;
   } else {
     const phone = (body?.phone || '').toString().replace(/\D/g, '');
@@ -370,6 +380,19 @@ Deno.serve(async (req: Request) => {
       .eq('id', conversationId);
   }
   sendTarget = resolved.jid;
+
+  // Um envio por telefone pode reaproveitar uma conversa antiga no upsert mais
+  // abaixo. Descobrimos isso ANTES do envio para separar "thread nova de aviso"
+  // de "conversa humana que recebeu um aviso". Falha na leitura erra para o lado
+  // seguro: trata como existente e não esconde nada.
+  if (!conversationId) {
+    const { data: existente, error: existenteErr } = await admin.from('whatsapp_conversations')
+      .select('id')
+      .eq('instance_id', instanceId)
+      .eq('remote_jid', sendTarget)
+      .maybeSingle();
+    existedBeforeSend = !!existente || !!existenteErr;
+  }
 
   let quoted: any = undefined;
   const replyToId: string | null = body?.reply_to_id || null;
@@ -532,7 +555,7 @@ Deno.serve(async (req: Request) => {
       remote_jid: sendTarget,
       contact_phone: canonicalPhone,
     }, { onConflict: 'instance_id,remote_jid' })
-      .select('id, status, assigned_user_id, client_id')
+      .select('id, status, assigned_user_id, client_id, is_internal, last_customer_message_at')
       .single();
     if (convErr || !conv?.id) {
       // A mensagem já saiu; explicitar isso evita que o cliente repita o envio e
@@ -545,6 +568,7 @@ Deno.serve(async (req: Request) => {
     conversationId = conv.id;
     wasClosed = conv.status === 'closed';
     hadOwner = !!conv.assigned_user_id;
+    wasInternal = conv.is_internal === true;
 
     // ── AVISO AO TIME NÃO É ATENDIMENTO ────────────────────────────────────
     //
@@ -553,15 +577,23 @@ Deno.serve(async (req: Request) => {
     // caixa de entrada: ninguém está do outro lado esperando resposta, e a
     // linha inflaria não-lidas e SLA.
     //
-    // A marca só é posta em conversa SEM CLIENTE vinculado. O upsert acima
-    // reaproveita a thread existente, e um colaborador que também seja cliente
-    // do escritório não pode ter o atendimento dele sumindo da inbox porque um
-    // aviso de prazo passou pelo mesmo número.
-    if (body?.internal === true && !conv.client_id) {
+    // Só uma thread realmente NOVA e sem sinal de atendimento recebe a marca.
+    // `client_id` nulo não prova isso: colaborador não é cliente e pode conversar
+    // normalmente com o escritório pelo mesmo número que recebe os lembretes.
+    if (deveMarcarComoConversaInterna({
+      internalRequested: body?.internal === true,
+      existedBeforeSend,
+      clientId: conv.client_id ?? null,
+      assignedUserId: conv.assigned_user_id ?? null,
+      lastCustomerMessageAt: conv.last_customer_message_at ?? null,
+    })) {
       await admin.from('whatsapp_conversations')
         .update({ is_internal: true })
         .eq('id', conversationId)
-        .is('client_id', null);
+        .is('client_id', null)
+        .is('assigned_user_id', null)
+        .is('last_customer_message_at', null);
+      wasInternal = true;
     }
   }
 
@@ -627,18 +659,24 @@ Deno.serve(async (req: Request) => {
   //   · `automated` — regra do CRM que roda no navegador do atendente (ações de
   //     etapa do funil). O JWT é de gente, mas a mensagem não é atendimento: uma
   //     etapa "encerrar + avisar" reabriria o que ela mesma acabou de fechar.
-  const reopened = wasClosed && !isSystem && !!user && body?.automated !== true;
-  if (reopened) {
-    const patch: Record<string, unknown> = {
+  const isHumanSend = !isSystem && !!user && body?.automated !== true;
+  const reopened = wasClosed && isHumanSend;
+  const revealed = envioHumanoRevelaConversa(
+    wasInternal, isSystem, !!user, body?.automated === true,
+  );
+  if (reopened || revealed) {
+    const patch: Record<string, unknown> = {};
+    if (revealed) patch.is_internal = false;
+    if (reopened) Object.assign(patch, {
       status: 'open',
       reopened_at: new Date().toISOString(),
       awaiting_accept: false,
       transfer_pending_since: null,
-    };
+    });
     // Quem escreveu assume o caso — reabrir jogando na fila de outra pessoa seria
     // pior que deixar encerrado. Conversa que já tem dono não é tomada: takeover
     // continua sendo ato explícito (botão Assumir), como no compositor.
-    if (!hadOwner) patch.assigned_user_id = user.id;
+    if (reopened && !hadOwner) patch.assigned_user_id = user!.id;
     const { error: reopenErr } = await admin.from('whatsapp_conversations')
       .update(patch).eq('id', conversationId);
     // A mensagem já saiu: falhar a reabertura não pode falhar o envio.

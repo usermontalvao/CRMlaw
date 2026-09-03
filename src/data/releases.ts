@@ -37,6 +37,28 @@ export type ReleaseNote = {
 
 export const releases: ReleaseNote[] = [
   {
+    version: '1.22.4',
+    date: '02/09/2026',
+    summary: 'Um lembrete automático conseguia esconder da caixa de entrada uma conversa de verdade que usava o mesmo número.',
+    modules: [
+      {
+        moduleId: 'whatsapp',
+        changes: [
+          {
+            type: 'fix' as const,
+            title: 'Um aviso interno escondia a conversa humana do mesmo número',
+            description: 'Conversas criadas só para avisos do sistema ficam fora da caixa de entrada, e a marca era posta em qualquer conversa sem cliente vinculado. Como o envio reaproveita a conversa que já existe, bastava um lembrete de prazo passar pelo número de um colaborador para o atendimento antigo dele desaparecer da inbox. Agora só nasce interna a conversa realmente nova e sem nenhum sinal de atendimento — sem cliente, sem responsável e sem nenhuma mensagem do contato.',
+          },
+          {
+            type: 'fix' as const,
+            title: 'A marca de conversa interna deixou de ser permanente',
+            description: 'Se o contato escrever, ou se alguém do escritório responder por ali pelo CRM, aquela conversa volta na hora para a caixa de entrada — a primeira atividade humana já a transforma em atendimento. As conversas que tinham sido escondidas no passado foram devolvidas.',
+          },
+        ],
+      },
+    ],
+  },
+  {
     version: '1.22.3',
     date: '02/09/2026',
     summary: 'A página pública de assinatura ganhou um guia que aponta a próxima coisa a tocar, o documento ficou legível no computador e sair no meio do envio passou a pedir confirmação.',

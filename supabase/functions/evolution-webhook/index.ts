@@ -41,18 +41,19 @@ import {
 } from '../_shared/wa-identity.ts';
 import { ACTOR_CONTATO, ACTOR_ESCRITORIO, aplicarReacao, type WaReacao } from '../_shared/wa-reactions.ts';
 import { isWithinBusinessHours as canalAbertoAgora } from '../_shared/wa-business-hours.ts';
+import { mensagemNovaRevelaConversa } from '../_shared/wa-internal-conversation.ts';
 
 declare const EdgeRuntime: { waitUntil(p: Promise<unknown>): void } | undefined;
 
 const MEDIA_BUCKET = 'whatsapp-media';
 
 type ConvRow = {
-  id: string; contact_avatar_path: string | null; is_blocked: boolean; status: string;
+  id: string; contact_avatar_path: string | null; is_blocked: boolean; is_internal: boolean; status: string;
   department_id: string | null; contact_phone: string | null; contact_name: string | null;
   contact_lid: string | null;
 };
 
-const CONV_COLS = 'id, contact_avatar_path, is_blocked, status, department_id, contact_phone, contact_name, contact_lid';
+const CONV_COLS = 'id, contact_avatar_path, is_blocked, is_internal, status, department_id, contact_phone, contact_name, contact_lid';
 
 /**
  * A mensagem da Evolution é única DENTRO do canal, não dentro da conversa.
@@ -540,9 +541,24 @@ async function handleMessage(admin: any, instanceId: string, instanceName: strin
   // Idempotência por CANAL: a mesma entrega pelo telefone e pelo LID não pode
   // existir em duas conversas. A consulta antiga filtrava `conversation_id` e
   // portanto só funcionava depois de acertar a identidade — tarde demais.
+  let alreadyPersisted = false;
   if (evoId) {
     const existingConv = await conversationByEvolutionMessage(admin, instanceId, evoId);
-    if (existingConv) return;
+    alreadyPersisted = !!existingConv;
+    if (alreadyPersisted) return;
+  }
+
+  // Uma mensagem NOVA do contato é atividade humana e transforma o aviso em
+  // atendimento. `fromMe` não revela aqui: o eco de um aviso automático pode
+  // chegar por uma corrida curta antes de o evolution-send terminar o INSERT.
+  // Envio manual pelo CRM é tratado na própria função de envio.
+  if (mensagemNovaRevelaConversa(conv.is_internal, fromMe, alreadyPersisted)) {
+    const { error: revealError } = await admin.from('whatsapp_conversations')
+      .update({ is_internal: false })
+      .eq('id', conv.id)
+      .eq('is_internal', true);
+    if (revealError) console.error('conversa interna não foi revelada', revealError);
+    else conv = { ...conv, is_internal: false };
   }
 
   // ── Mídia: baixar bytes e salvar no storage ──
