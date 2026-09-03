@@ -37,6 +37,28 @@ export type ReleaseNote = {
 
 export const releases: ReleaseNote[] = [
   {
+    version: '1.22.15',
+    date: '03/09/2026',
+    summary: 'A busca da conversa cabe no celular e conta o que ela alcança.',
+    modules: [
+      {
+        moduleId: 'whatsapp',
+        changes: [
+          {
+            type: 'fix' as const,
+            title: 'O campo de busca da conversa cabia pela metade no celular',
+            description: 'A folga reservada para o contador ("3 de 17") ficava lá mesmo com o campo vazio, e num aparelho de 375 px isso cortava o próprio texto do campo no meio de uma palavra. A folga passou a existir só quando há contador para ocupá-la.',
+          },
+          {
+            type: 'improvement' as const,
+            title: 'A busca conta o que ela alcança',
+            description: 'Com o campo ainda vazio, uma linha abaixo dele avisa que a procura cobre o histórico inteiro, o que foi dito em áudio e o nome dos anexos. Sem isso o recurso existia e ninguém descobriria — ninguém tenta procurar dentro de um áudio por conta própria.',
+          },
+        ],
+      },
+    ],
+  },
+  {
     version: '1.22.14',
     date: '03/09/2026',
     summary: 'A busca do WhatsApp passa a procurar dentro das mensagens de TODAS as conversas — e acende a palavra dentro da conversa.',

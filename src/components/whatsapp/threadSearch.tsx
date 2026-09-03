@@ -134,6 +134,8 @@ export const ThreadSearch: React.FC<ThreadSearchProps> = ({
   }, [termo, escopo]);
 
   const total = achados?.length ?? 0;
+  /** Há algo para escrever no canto do campo (rodinha ou "3 de 17")? */
+  const mostraContador = buscando || achados !== null;
 
   // Acende TODA ocorrência dentro das bolhas — o último passo da busca, que até
   // aqui ficava por conta do olho. Ver `useThreadTermHighlight`: é feito pela
@@ -214,9 +216,17 @@ export const ThreadSearch: React.FC<ThreadSearchProps> = ({
             value={termo}
             onChange={e => setTermo(e.target.value)}
             onKeyDown={noCampo}
-            placeholder="Procurar nesta conversa — inclusive no que foi dito em áudio"
+            /* Curto porque tem de caber no CELULAR: a versão longa
+               ("…inclusive no que foi dito em áudio") era cortada no meio da
+               palavra em 375 px. O que ela ensinava passou para a dica abaixo,
+               que aparece com o campo ainda vazio — é lá que a pessoa está
+               olhando quando ainda não sabe o que a busca alcança. */
+            placeholder="Procurar na conversa…"
             aria-label="Procurar dentro da conversa"
-            className="w-full rounded-full border border-transparent bg-[#f4f3f0] py-2 pl-9 pr-24 text-[13px] text-slate-800 outline-none transition placeholder:text-slate-400 focus:border-[#e0ddd5] focus:bg-white focus:shadow-[0_1px_3px_rgba(15,23,42,.07)]"
+            /* A folga da direita é reservada só quando há contador para
+               ocupá-la. Fixa, ela comia 96 px do campo mesmo vazio — e num
+               celular de 375 px isso cortava o próprio texto do campo. */
+            className={`w-full rounded-full border border-transparent bg-[#f4f3f0] py-2 pl-9 text-[13px] text-slate-800 outline-none transition placeholder:text-slate-400 focus:border-[#e0ddd5] focus:bg-white focus:shadow-[0_1px_3px_rgba(15,23,42,.07)] ${mostraContador ? 'pr-[76px]' : 'pr-3'}`}
           />
           {/* O contador mora DENTRO do campo, encostado na direita: é a resposta
               do que se está digitando, não um enfeite da barra. */}
@@ -244,6 +254,19 @@ export const ThreadSearch: React.FC<ThreadSearchProps> = ({
           </button>
         </div>
       </div>
+
+      {/* A DICA ENSINA O QUE A BUSCA ALCANÇA, e some assim que se digita.
+          Sem ela, ninguém descobre que procurar aqui encontra o que foi DITO
+          num áudio — o recurso existiria e não seria usado. Fica na altura
+          dos olhos de quem acabou de abrir a busca e ainda não digitou nada. */}
+      {termo.trim().length < 2 && (
+        <div className="absolute inset-x-0 top-full border-b border-[#e7e5df] bg-white px-4 py-2 shadow-[0_14px_28px_-18px_rgba(15,23,42,.45)]">
+          <p className="flex items-center gap-1.5 text-[11.5px] leading-snug text-slate-400">
+            <Mic size={11} className="shrink-0" />
+            Procura no histórico inteiro — inclusive no que foi dito em áudio e no nome dos anexos.
+          </p>
+        </div>
+      )}
 
       {/* Os resultados. Só existem quando há o que mostrar — com o campo vazio
           a barra é só a barra, e a conversa continua inteira embaixo dela. */}
