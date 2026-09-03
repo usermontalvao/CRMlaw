@@ -37,6 +37,23 @@ export type ReleaseNote = {
 
 export const releases: ReleaseNote[] = [
   {
+    version: '1.22.12',
+    date: '03/09/2026',
+    summary: 'O certificado de assinatura volta a registrar o identificador da conta Google de quem assinou.',
+    modules: [
+      {
+        moduleId: 'assinatura-publica',
+        changes: [
+          {
+            type: 'fix' as const,
+            title: 'Google ID volta ao certificado',
+            description: 'A correção de segurança que impediu o link de um signatário de entregar o dos outros passou a esconder também o identificador da conta Google de todos eles. Como a página de assinatura lê exatamente essa lista para montar o certificado que fica dentro do documento, o fator “Google ID” sumiu do cartão de autenticação e da trilha de auditoria em todas as assinaturas feitas por conta Google desde a madrugada de 03/09. O identificador nunca deixou de ser gravado, apenas de ser impresso, e volta a aparecer. O link de assinatura de cada signatário continua protegido.',
+          },
+        ],
+      },
+    ],
+  },
+  {
     version: '1.22.11',
     date: '03/09/2026',
     summary: 'O link de assinatura deixa de prender o iPhone em “Conferindo seu acesso” enquanto os anexos são preparados.',
