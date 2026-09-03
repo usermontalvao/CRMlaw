@@ -37,6 +37,38 @@ export type ReleaseNote = {
 
 export const releases: ReleaseNote[] = [
   {
+    version: '1.22.9',
+    date: '03/09/2026',
+    summary: 'Criar uma solicitação de assinatura deixou de significar enviá-la — agora é uma escolha explícita, e a lista deixa de esconder o telefone e o prazo vencido.',
+    modules: [
+      {
+        moduleId: 'assinaturas',
+        changes: [
+          {
+            type: 'fix' as const,
+            title: 'Criar não é mais enviar',
+            description: 'O botão final da criação de uma assinatura virou dois: "Criar sem enviar" e "Criar e enviar". Antes, o sistema sempre dizia "enviado" mesmo quando nenhum e-mail saía — agora a tela final e o aviso mostram o que realmente aconteceu, com um botão para enviar depois quando a criação for sem envio.',
+          },
+          {
+            type: 'fix' as const,
+            title: 'Telefone do signatário não é mais descartado',
+            description: 'A criação sempre gravava o telefone como vazio, mesmo quando o cliente já tinha um cadastrado, o que também impedia o reenvio por WhatsApp depois. Agora o formulário tem um campo de telefone e ele é aproveitado do cliente selecionado.',
+          },
+          {
+            type: 'fix' as const,
+            title: 'Envelope incompleto não fica mais pela metade',
+            description: 'Se o posicionamento dos campos de assinatura falhasse depois que a solicitação já tinha sido criada, sobrava um link público ativo sem nenhuma posição definida. Agora essa solicitação incompleta é desfeita automaticamente.',
+          },
+          {
+            type: 'fix' as const,
+            title: '"Bloquear após prazo" desligado agora bloqueia mesmo',
+            description: 'Desligar essa opção só escondia o campo de data, mas o prazo já digitado continuava sendo aplicado. Agora, desligado, nenhum prazo é enviado. A lista também passa a mostrar "Expirado" em vez de "Aguardando" quando o prazo já passou.',
+          },
+        ],
+      },
+    ],
+  },
+  {
     version: '1.22.8',
     date: '03/09/2026',
     summary: 'O formulário do cliente volta a gerar o documento quando o telefone já está cadastrado e passa a atualizar a ficha com histórico das mudanças.',

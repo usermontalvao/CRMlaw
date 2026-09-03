@@ -60,7 +60,7 @@ pdfjs.GlobalWorkerOptions.workerSrc = `//unpkg.com/pdfjs-dist@${pdfjs.version}/b
 type WizardStep = 'list' | 'upload' | 'signers' | 'position' | 'settings' | 'success';
 
 interface DraftSigner {
-  id: string; name: string; email: string; cpf: string; role: string; order: number; deliveryMethod: 'email' | 'link';
+  id: string; name: string; email: string; cpf: string; phone: string; role: string; order: number; deliveryMethod: 'email' | 'link';
 }
 
 interface DraftField {
@@ -345,7 +345,7 @@ const SignatureModule: React.FC<SignatureModuleProps> = ({ prefillData, focusReq
   }, [selectedClientId]);
 
   const [signers, setSigners] = useState<DraftSigner[]>([
-    { id: crypto.randomUUID(), name: '', email: '', cpf: '', role: 'Signatário', order: 1, deliveryMethod: 'email' },
+    { id: crypto.randomUUID(), name: '', email: '', cpf: '', phone: '', role: 'Signatário', order: 1, deliveryMethod: 'email' },
   ]);
   const [signerOrder, setSignerOrder] = useState<'none' | 'sequential'>('none');
 
@@ -393,6 +393,11 @@ const SignatureModule: React.FC<SignatureModuleProps> = ({ prefillData, focusReq
   ]);
 
   const [createdRequest, setCreatedRequest] = useState<SignatureRequestWithSigners | null>(null);
+  // Estado real do envio no momento da criação: null = ainda não tentou enviar
+  // ("Criar sem enviar"); caso contrário, guarda quem recebeu e quem falhou —
+  // a tela de sucesso não pode mais dizer "enviado" sem checar isso.
+  const [createdRequestSendResult, setCreatedRequestSendResult] = useState<{ attempted: boolean; sent: string[]; failed: { email: string; error: string }[] } | null>(null);
+  const [sendingLinkFromSuccess, setSendingLinkFromSuccess] = useState(false);
   const [detailsRequest, setDetailsRequest] = useState<SignatureRequestWithSigners | null>(null);
   // Modelo per_document: documentos assinados individuais do envelope em foco (detalhes).
   const [detailsDocuments, setDetailsDocuments] = useState<SignatureRequestDocument[]>([]);
@@ -792,6 +797,7 @@ const SignatureModule: React.FC<SignatureModuleProps> = ({ prefillData, focusReq
         name: prefillData.clientName,
         email: prefillData.clientEmail || '',
         cpf: prefillData.clientCpf || '',
+        phone: prefillData.clientPhone || '',
         role: 'Signatário',
         order: 1,
         deliveryMethod: 'email',
@@ -1684,9 +1690,9 @@ const SignatureModule: React.FC<SignatureModuleProps> = ({ prefillData, focusReq
     setSelectedGenDocIds([]);
     setGenDocsSearchTerm('');
     clearSelectedUploadFileIndexes();
-    setSigners([{ id: crypto.randomUUID(), name: '', email: '', cpf: '', role: 'Signatário', order: 1, deliveryMethod: 'email' }]);
+    setSigners([{ id: crypto.randomUUID(), name: '', email: '', cpf: '', phone: '', role: 'Signatário', order: 1, deliveryMethod: 'email' }]);
     setSignerOrder('none');
-    setFields([]); setPdfPreviewUrl(null); setCreatedRequest(null);
+    setFields([]); setPdfPreviewUrl(null); setCreatedRequest(null); setCreatedRequestSendResult(null);
     setPdfPreviewUrls([]); setPdfNumPagesByDoc({});
     setIsDocxFile(false); setIsImageFile(false); setDocxBlob(null);
     setViewerDocuments([]); // Limpar documentos do viewer
@@ -2015,7 +2021,7 @@ const SignatureModule: React.FC<SignatureModuleProps> = ({ prefillData, focusReq
   };
 
   const addSigner = () => {
-    setSigners((prev) => [...prev, { id: crypto.randomUUID(), name: '', email: '', cpf: '', role: 'Signatário', order: prev.length + 1, deliveryMethod: 'email' }]);
+    setSigners((prev) => [...prev, { id: crypto.randomUUID(), name: '', email: '', cpf: '', phone: '', role: 'Signatário', order: prev.length + 1, deliveryMethod: 'email' }]);
   };
 
   const removeSigner = (id: string) => { if (signers.length > 1) setSigners((prev) => prev.filter((s) => s.id !== id)); };
@@ -2524,7 +2530,12 @@ const SignatureModule: React.FC<SignatureModuleProps> = ({ prefillData, focusReq
     };
   }, [draggingField]);
 
-  const handleSubmit = async () => {
+  const handleSubmit = async (sendAfterCreate: boolean) => {
+    // Envelope criado nesta chamada — só populado depois que a linha existe no
+    // banco. Se algo falhar DEPOIS disso (campos de assinatura, por exemplo),
+    // o catch desfaz a criação: nenhum link "meio pronto" pode sobreviver, ver
+    // item 5 da revisão do módulo (criação deve ser atômica).
+    let created: SignatureRequestWithSigners | null = null;
     try {
       setWizardLoading(true);
       const docId = selectedDocumentId || crypto.randomUUID();
@@ -2558,17 +2569,19 @@ const SignatureModule: React.FC<SignatureModuleProps> = ({ prefillData, focusReq
         document_name: selectedDocumentName, document_path: docPath,
         attachment_paths: attachPaths,
         client_id: selectedClientId, client_name: selectedClientName, auth_method: settings.authMethod,
-        expires_at: settings.expiresAt || null,
+        // "Bloquear após prazo" desligado tem de significar SEM prazo — antes a
+        // data ficava no estado e era enviada mesmo com o interruptor desligado.
+        expires_at: settings.blockAfterDeadline ? (settings.expiresAt || null) : null,
         require_cpf: settings.requireCpf,
         allow_refusal: settings.allowRefusal,
         signing_order: signerOrder === 'sequential' ? 'sequential' : 'parallel',
         signature_model: isMultiDocEnvelope ? 'per_document' : 'consolidated',
-        signers: signers.map((s, i) => ({ name: s.name, email: s.email, cpf: s.cpf || null, phone: null, role: s.role || 'Signatário', order: i + 1 })),
+        signers: signers.map((s, i) => ({ name: s.name, email: s.email, cpf: s.cpf || null, phone: s.phone || null, role: s.role || 'Signatário', order: i + 1 })),
       };
       
       console.log('📎 Criando solicitação com anexos:', selectedAttachmentPaths);
       console.log('📦 Payload completo:', JSON.stringify(payload, null, 2));
-      const created = await signatureService.createRequest(payload);
+      created = await signatureService.createRequest(payload);
       console.log('✅ Solicitação criada:', created.id, 'attachment_paths no response:', (created as any).attachment_paths);
       console.log('📍 Campos de assinatura no estado:', fields.length, fields.map(f => ({ doc: f.documentId, page: f.pageNumber, type: f.fieldType })));
       if (fields.length > 0) {
@@ -2578,7 +2591,7 @@ const SignatureModule: React.FC<SignatureModuleProps> = ({ prefillData, focusReq
           const signerIndex = signers.findIndex((s) => s.id === f.signerId);
           const signerOrder = signer?.order ?? (signerIndex >= 0 ? signerIndex + 1 : null);
           const createdSigner = createdSignersOrdered.find((cs) => (cs.order ?? null) === signerOrder)
-            ?? created.signers.find((cs) => cs.email === signer?.email)
+            ?? created!.signers.find((cs) => cs.email === signer?.email)
             ?? (signerIndex >= 0 ? createdSignersOrdered[signerIndex] : null);
           return {
             document_id: f.documentId,
@@ -2597,8 +2610,50 @@ const SignatureModule: React.FC<SignatureModuleProps> = ({ prefillData, focusReq
       } else {
         console.warn('⚠️ NENHUM campo de assinatura para salvar!');
       }
-      setCreatedRequest(created); setWizardStep('success'); toast.success('Documento enviado!'); loadData();
-    } catch (error: any) { toast.error(error.message || 'Erro'); } finally { setWizardLoading(false); }
+
+      // Criar o envelope NÃO é enviá-lo — o disparo é uma etapa separada e
+      // explícita ("Criar e enviar" vs. "Criar sem enviar"), e só aqui sabemos
+      // de verdade se algo saiu.
+      let sendResult: { attempted: boolean; sent: string[]; failed: { email: string; error: string }[] } | null = null;
+      if (sendAfterCreate) {
+        try {
+          const { sent, failed } = await signatureService.sendSignatureLinkEmail(created.id, true);
+          sendResult = { attempted: true, sent, failed };
+        } catch (sendError: any) {
+          sendResult = { attempted: true, sent: [], failed: [{ email: '', error: sendError?.message || 'Falha ao enviar' }] };
+        }
+      } else {
+        sendResult = { attempted: false, sent: [], failed: [] };
+      }
+
+      setCreatedRequest(created);
+      setCreatedRequestSendResult(sendResult);
+      setWizardStep('success');
+      if (!sendAfterCreate) {
+        toast.success('Solicitação criada — ainda não enviada.');
+      } else if (sendResult.sent.length > 0 && sendResult.failed.length === 0) {
+        toast.success('Solicitação criada e enviada!');
+      } else if (sendResult.sent.length > 0) {
+        toast.error('Criada e enviada parcialmente — alguns signatários falharam.');
+      } else {
+        toast.error('Solicitação criada, mas o envio falhou. Você pode reenviar pelos detalhes.');
+      }
+      loadData();
+    } catch (error: any) {
+      if (created?.id) {
+        // O envelope chegou a existir no banco (com link público válido), mas
+        // uma etapa seguinte falhou — não deixamos essa solicitação pela
+        // metade parada na lista.
+        try {
+          await signatureService.permanentlyDeleteRequest(created.id, true);
+        } catch (rollbackError) {
+          console.error('Falha ao desfazer envelope incompleto:', rollbackError);
+        }
+      }
+      toast.error(error.message || 'Erro');
+    } finally {
+      setWizardLoading(false);
+    }
   };
 
   const handleOpenFooterMockup = async () => {
@@ -3655,14 +3710,54 @@ const SignatureModule: React.FC<SignatureModuleProps> = ({ prefillData, focusReq
 
   // SUCCESS
   if (wizardStep === 'success' && createdRequest) {
+    const sendResult = createdRequestSendResult;
+    const wasSent = !!sendResult?.attempted && sendResult.sent.length > 0;
+    const sendPartiallyFailed = !!sendResult?.attempted && sendResult.failed.length > 0;
+    const title = wasSent
+      ? (sendPartiallyFailed ? 'Documento criado — envio parcial' : 'Documento criado e enviado com sucesso')
+      : 'Documento criado';
+    const subtitle = !sendResult?.attempted
+      ? <>A solicitação foi <strong>criada</strong>, mas ainda <strong>não foi enviada</strong>. Use "Enviar agora" ou copie os links abaixo.</>
+      : wasSent && !sendPartiallyFailed
+        ? <>Seu documento foi <strong>enviado</strong> para os destinatários.</>
+        : wasSent
+          ? <>Enviado para parte dos destinatários — {sendResult!.failed.length} falharam. Copie o link ou reenvie pelos detalhes.</>
+          : <>A solicitação foi <strong>criada</strong>, mas o <strong>envio falhou</strong>. Copie o link ou tente novamente.</>;
+
+    const handleSendNow = async () => {
+      setSendingLinkFromSuccess(true);
+      try {
+        const { sent, failed } = await signatureService.sendSignatureLinkEmail(createdRequest.id, true);
+        setCreatedRequestSendResult({ attempted: true, sent, failed });
+        if (sent.length > 0 && failed.length === 0) toast.success('Enviado!');
+        else if (sent.length > 0) toast.error('Enviado parcialmente — alguns signatários falharam.');
+        else toast.error(failed[0]?.error || 'Falha ao enviar');
+      } catch (e: any) {
+        toast.error(e?.message || 'Falha ao enviar');
+      } finally {
+        setSendingLinkFromSuccess(false);
+      }
+    };
+
     return (
       <div className="max-w-2xl mx-auto py-12">
         <div className="bg-white rounded-2xl shadow-lg text-center overflow-hidden">
           <div className="h-2 w-full bg-gradient-to-r from-orange-500 to-orange-600" />
           <div className="p-8">
             <div className="w-20 h-20 bg-orange-100 rounded-full flex items-center justify-center mx-auto mb-6"><Check className="w-10 h-10 text-orange-600" /></div>
-          <h2 className="text-2xl font-bold text-slate-900 mb-2">Documento criado e enviado com sucesso</h2>
-          <p className="text-slate-600 mb-8">Seu documento foi <strong>enviado</strong> para os destinatários.</p>
+          <h2 className="text-2xl font-bold text-slate-900 mb-2">{title}</h2>
+          <p className="text-slate-600 mb-8">{subtitle}</p>
+          {!wasSent && (
+            <button
+              type="button"
+              onClick={() => void handleSendNow()}
+              disabled={sendingLinkFromSuccess}
+              className="mb-6 inline-flex items-center gap-2 px-4 py-2 bg-slate-900 text-white rounded-lg font-medium hover:bg-slate-800 disabled:opacity-40"
+            >
+              {sendingLinkFromSuccess ? <Loader2 className="w-4 h-4 animate-spin" /> : <Send className="w-4 h-4" />}
+              Enviar agora
+            </button>
+          )}
           <div className="bg-slate-50 rounded-xl p-4 mb-6">
             <h3 className="text-sm font-semibold text-slate-700 mb-3">Links de assinatura</h3>
             <div className="space-y-3">
@@ -3746,18 +3841,39 @@ const SignatureModule: React.FC<SignatureModuleProps> = ({ prefillData, focusReq
                 })}
               </div>
               
-              <button 
-                type="button"
-                onClick={() => { 
-                  if (wizardStep === 'upload' && canProceedUpload) setWizardStep('signers'); 
-                  else if (wizardStep === 'signers' && canProceedSigners) setWizardStep('position'); 
-                  else if (wizardStep === 'settings') handleSubmit(); 
-                }} 
-                disabled={(wizardStep === 'upload' && !canProceedUpload) || (wizardStep === 'signers' && !canProceedSigners) || wizardLoading} 
-                className="flex items-center gap-2 px-4 py-2 bg-slate-900 text-white rounded-lg font-medium hover:bg-slate-800 disabled:opacity-40 disabled:cursor-not-allowed"
-              >
-                {wizardLoading ? <Loader2 className="w-4 h-4 animate-spin" /> : wizardStep === 'settings' ? <><Send className="w-4 h-4" />Enviar</> : <>Avançar<ChevronRight className="w-4 h-4" /></>}
-              </button>
+              {wizardStep === 'settings' ? (
+                <div className="flex items-center gap-2">
+                  <button
+                    type="button"
+                    onClick={() => void handleSubmit(false)}
+                    disabled={wizardLoading}
+                    title="Cria a solicitação e os links, mas não dispara e-mail nem WhatsApp — você envia depois, quando quiser."
+                    className="flex items-center gap-2 px-4 py-2 bg-white border border-[#e7e5df] text-slate-700 rounded-lg font-medium hover:bg-slate-50 disabled:opacity-40 disabled:cursor-not-allowed"
+                  >
+                    {wizardLoading ? <Loader2 className="w-4 h-4 animate-spin" /> : 'Criar sem enviar'}
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => void handleSubmit(true)}
+                    disabled={wizardLoading}
+                    className="flex items-center gap-2 px-4 py-2 bg-slate-900 text-white rounded-lg font-medium hover:bg-slate-800 disabled:opacity-40 disabled:cursor-not-allowed"
+                  >
+                    {wizardLoading ? <Loader2 className="w-4 h-4 animate-spin" /> : <><Send className="w-4 h-4" />Criar e enviar</>}
+                  </button>
+                </div>
+              ) : (
+                <button 
+                  type="button"
+                  onClick={() => { 
+                    if (wizardStep === 'upload' && canProceedUpload) setWizardStep('signers'); 
+                    else if (wizardStep === 'signers' && canProceedSigners) setWizardStep('position'); 
+                  }} 
+                  disabled={(wizardStep === 'upload' && !canProceedUpload) || (wizardStep === 'signers' && !canProceedSigners) || wizardLoading} 
+                  className="flex items-center gap-2 px-4 py-2 bg-slate-900 text-white rounded-lg font-medium hover:bg-slate-800 disabled:opacity-40 disabled:cursor-not-allowed"
+                >
+                  {wizardLoading ? <Loader2 className="w-4 h-4 animate-spin" /> : <>Avançar<ChevronRight className="w-4 h-4" /></>}
+                </button>
+              )}
             </div>
           </div>
         )}
@@ -4032,6 +4148,7 @@ const SignatureModule: React.FC<SignatureModuleProps> = ({ prefillData, focusReq
                             {signerRoles.map(r => <option key={r} value={r}>{r}</option>)}
                           </select>
                         </div>
+                        <input type="tel" value={signer.phone} onChange={(e) => updateSigner(signer.id, 'phone', e.target.value)} placeholder="Telefone (WhatsApp) — opcional" className="w-full px-3 py-2 border border-[#e7e5df] rounded text-sm focus:outline-none focus:ring-1 focus:ring-slate-400" />
                       </div>
                       <button type="button" onClick={() => removeSigner(signer.id)} disabled={signers.length <= 1} className="p-1 text-slate-400 hover:text-red-500 disabled:opacity-30"><Trash2 className="w-4 h-4" /></button>
                     </div>
@@ -5339,10 +5456,12 @@ const SignatureModule: React.FC<SignatureModuleProps> = ({ prefillData, focusReq
                 const isInCloud = Boolean(cloudSyncStatusByRequestId[req.id]);
 
                 const isBlocked = !!(req as any).blocked_at;
-                const statusColor  = isBlocked ? '#ef4444' : allSigned ? '#16a34a' : '#d97706';
-                const statusBg     = isBlocked ? '#fef2f2' : allSigned ? '#f0fdf4' : '#fffbeb';
-                const statusBorder = isBlocked ? '#fecaca' : allSigned ? '#bbf7d0' : '#fde68a';
-                const statusLabel  = isBlocked ? 'Bloqueado' : allSigned ? 'Assinado' : 'Aguardando';
+                const expiresAt = (req as any).expires_at as string | null | undefined;
+                const isExpired = !isBlocked && !allSigned && !!expiresAt && new Date(expiresAt).getTime() < Date.now();
+                const statusColor  = isBlocked ? '#ef4444' : allSigned ? '#16a34a' : isExpired ? '#64748b' : '#d97706';
+                const statusBg     = isBlocked ? '#fef2f2' : allSigned ? '#f0fdf4' : isExpired ? '#f1f5f9' : '#fffbeb';
+                const statusBorder = isBlocked ? '#fecaca' : allSigned ? '#bbf7d0' : isExpired ? '#cbd5e1' : '#fde68a';
+                const statusLabel  = isBlocked ? 'Bloqueado' : allSigned ? 'Assinado' : isExpired ? 'Expirado' : 'Aguardando';
 
                 return (
                   <div
