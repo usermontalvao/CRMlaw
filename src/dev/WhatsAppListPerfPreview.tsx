@@ -249,6 +249,7 @@ const WhatsAppListPerfPreview: React.FC = () => {
               deptById={DEPT_BY_ID}
               drafts={listDrafts}
               mutedIds={SEM_MUDOS}
+              pinnedIds={SEM_MUDOS}
               failedSends={FALHAS}
               archivedIds={ARQUIVADAS}
               showChannelName

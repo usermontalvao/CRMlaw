@@ -37,6 +37,23 @@ export type ReleaseNote = {
 
 export const releases: ReleaseNote[] = [
   {
+    version: '1.22.16',
+    date: '03/09/2026',
+    summary: 'Fixar conversa no topo da lista — a exceção que faltava na ordem por atividade.',
+    modules: [
+      {
+        moduleId: 'whatsapp',
+        changes: [
+          {
+            type: 'feature' as const,
+            title: 'Fixar conversa no topo',
+            description: 'A lista sempre se ordenou pela atividade mais recente, como no WhatsApp — a ordem certa para a fila, mas sem exceção: as duas ou três conversas que você está TRABALHANDO afundavam sob as outras a cada "ok" que chegava. Agora dá para fixá-las. O botão fica no cabeçalho da conversa (ao lado da lupa) e no menu "⋮" do celular e do painel flutuante; a linha fixada ganha um alfinete e sobe para o topo, e a mais recentemente fixada fica em cima das demais. É uma marca SUA: fixar não muda a ordem da lista de ninguém mais, e ela acompanha você em qualquer computador. Numa busca, a ordem continua sendo a da busca — o que você procurou vem primeiro, não o que estava fixado.',
+          },
+        ],
+      },
+    ],
+  },
+  {
     version: '1.22.15',
     date: '03/09/2026',
     summary: 'A busca da conversa cabe no celular e conta o que ela alcança.',

@@ -36,6 +36,8 @@ export interface ConversationListProps {
   /** Rascunhos das conversas NÃO abertas (o da aberta nunca aparece na lista). */
   drafts: Record<string, string>;
   mutedIds: ReadonlySet<string>;
+  /** Conversas fixadas no topo por este usuário (ver `pinStore`). */
+  pinnedIds: ReadonlySet<string>;
   /** Envios que falharam, por conversa (ver `failedSends` no item da lista). */
   failedSends: ReadonlyMap<string, number>;
   /**
@@ -75,7 +77,7 @@ export interface ConversationListProps {
 
 const ConversationListInner: React.FC<ConversationListProps> = ({
   conversations, selectedId, loading, privateMode, emptyMessage,
-  channelById, deptById, drafts, mutedIds, failedSends, archivedIds, showChannelName, busyConversationIds, sweeping,
+  channelById, deptById, drafts, mutedIds, pinnedIds, failedSends, archivedIds, showChannelName, busyConversationIds, sweeping,
   funnelLabelsForChannel, aiChipFor, elapsedMinutes, slaPolicyFor,
   conversationStatus, docStatusFor, trackedSignatureFor,
   onSelect, onStopSignatureTracking, onStopTemplateFillTracking,
@@ -140,6 +142,7 @@ const ConversationListInner: React.FC<ConversationListProps> = ({
             statusCls={st.cls}
             docStatus={docStatusFor(c.client_id)}
             muted={mutedIds.has(c.id)}
+            pinned={pinnedIds.has(c.id)}
             draftPreview={drafts[c.id] ?? ''}
             failedSends={failedSends.get(c.id) ?? 0}
             funnelLabels={funnelLabelsForChannel(c.instance_id)}

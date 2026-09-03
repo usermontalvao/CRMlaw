@@ -13,6 +13,7 @@ import {
   BarChart2, TrendingUp, Users, Clock3, CheckCircle, Inbox,
   MapPin, Play, Pause, Bell, BellOff, Info, MoreVertical, BellRing,
   Target,
+  Pin, PinOff,
   LockKeyhole,
   GitBranch,
   Activity,
@@ -25,6 +26,7 @@ import { InboxTabs, InboxViewSwitch, InboxWaitingMenu } from './whatsapp/InboxTa
 import { useCallHistory } from './whatsapp/hooks/useCallHistory';
 import { useThreadDragDrop } from './whatsapp/hooks/useThreadDragDrop';
 import { muteStore } from '../services/whatsapp/muteStore';
+import { pinStore } from '../services/whatsapp/pinStore';
 import { notifyScope } from '../services/whatsapp/notifyScope';
 import { whatsappService, normalizePhone, renderTemplate, agentPermissions, summarizeOverview, DEFAULT_AGENT_PREFS, type StaffOption, type AgentPrefs, type ScheduleDeadline, type ClientDocRequest, type ClientOverview, type ClientSchedule, type ClientPendings, type WhatsAppInternalNote, type ClientTrackedSignatureStatus } from '../services/whatsapp.service';
 import { swrWa, lidoDaMemoriaWa, guardaNaMemoriaWa } from '../services/whatsapp/sessionCache';
@@ -465,11 +467,16 @@ const WhatsAppModule: React.FC<WhatsAppModuleProps> = ({ openConversationId, ope
   // O snapshot alimenta o memo de `mutedIds` (silenciar/reativar precisa
   // repintar as linhas afetadas mesmo com a lista memoizada).
   const muteSnapshot = useSyncExternalStore(muteStore.subscribe, muteStore.getSnapshot);
+  // Conversas FIXADAS por este usuário (no banco, sem realtime — ver `pinStore`).
+  // O snapshot serve ao mesmo propósito do de silenciamento: repintar as linhas
+  // e reordenar a fila no mesmo quadro do clique.
+  const pinSnapshot = useSyncExternalStore(pinStore.subscribe, pinStore.getSnapshot);
   // Chamadas de voz (WaCalls). Só o botão do cabeçalho vive aqui; o modal da
   // chamada e o convite de chamada recebida são do host global (WaCallsHost),
   // para a ligação não cair quando esta tela desmonta.
   const waCalls = useWaCalls();
   useEffect(() => { void muteStore.init(); }, []);
+  useEffect(() => { void pinStore.init(); }, []);
   const [muteModalOpen, setMuteModalOpen] = useState(false);
   useEffect(() => { setMuteModalOpen(false); }, [selectedId]);
   // "Carregando" só quando não há NADA para mostrar. Com a lista da abertura
@@ -1582,6 +1589,21 @@ const WhatsAppModule: React.FC<WhatsAppModuleProps> = ({ openConversationId, ope
         const ra = searchRank({ closed: a.status === 'closed', searching });
         const rb = searchRank({ closed: b.status === 'closed', searching });
         if (ra !== rb) return ra - rb;
+        // AS FIXADAS SOBEM — mas só na FILA, nunca no resultado de uma busca.
+        //
+        // Quem procura pediu uma ordem: a relevância do que digitou. Empurrar
+        // para o topo dela uma conversa fixada por outro motivo responderia a
+        // uma pergunta que ninguém fez. E a busca já tem a própria régua
+        // (`searchRank`), que manda as encerradas para o fim.
+        if (!searching) {
+          const pa = pinStore.pinnedAt(a.id);
+          const pb = pinStore.pinnedAt(b.id);
+          if (!!pa !== !!pb) return pa ? -1 : 1;
+          // Entre duas fixadas, a mais recentemente fixada em cima: fixar é o
+          // gesto de "esta agora", e a mais nova é a que acabou de receber essa
+          // decisão. Empatam pela atividade, como todas as outras.
+          if (pa && pb && pa !== pb) return pa > pb ? -1 : 1;
+        }
         const ta = conversationActivityAt(a);
         const tb = conversationActivityAt(b);
         return tb < ta ? -1 : tb > ta ? 1 : 0;
@@ -1598,7 +1620,9 @@ const WhatsAppModule: React.FC<WhatsAppModuleProps> = ({ openConversationId, ope
     // linhas encerradas já vem dentro da thread da conversa viva, e o filtro
     // "Encerradas" continua listando cada uma delas separadamente.
     return collapseContactThreads(ordenadas, selectedId);
-  }, [conversations, deferredSearch, filter, channelFilter, deptFilter, statusFilter, labelFilter, selectedId, user?.id, funnelLabelsForChannel]);
+    // `pinSnapshot` não é lido no corpo — é o gatilho: as marcas vivem no store,
+    // e sem ele a lista continuaria na ordem antiga depois de fixar.
+  }, [conversations, deferredSearch, filter, channelFilter, deptFilter, statusFilter, labelFilter, selectedId, user?.id, funnelLabelsForChannel, pinSnapshot]);
 
   // As encerradas que a BUSCA trouxe do arquivo. A lista as usa para duas coisas:
   // desenhar a divisória "Encerradas" onde o grupo começa e pintar essas linhas
@@ -1852,6 +1876,28 @@ const WhatsAppModule: React.FC<WhatsAppModuleProps> = ({ openConversationId, ope
     mutedIdsRef.current = next;
     return next;
   }, [conversations, muteSnapshot]);
+
+  // Fixadas: mesmo desenho do Set de silenciadas — a lista é memoizada por
+  // linha, e comparar dois Sets é mais barato do que consultar o store em cada
+  // uma delas a cada render.
+  const pinnedIdsRef = useRef<Set<string>>(new Set());
+  const pinnedIds = useMemo(() => {
+    const next = new Set(conversations.filter(c => pinStore.isPinned(c.id)).map(c => c.id));
+    const prev = pinnedIdsRef.current;
+    if (next.size === prev.size && [...next].every(id => prev.has(id))) return prev;
+    pinnedIdsRef.current = next;
+    return next;
+  }, [conversations, pinSnapshot]);
+
+  const togglePin = useCallback(async (conversationId: string) => {
+    try {
+      const fixou = await pinStore.toggle(conversationId);
+      toast.success(fixou ? 'Conversa fixada no topo' : 'Conversa desafixada',
+        fixou ? 'Ela fica acima da fila até você desafixar.' : undefined);
+    } catch (e: any) {
+      toast.error('Não foi possível fixar', e?.message);
+    }
+  }, [toast]);
 
   // ── Estado da IA por conversa (etiqueta da lista) ──
   // Uma consulta para a inbox inteira, refeita quando o conjunto de conversas
@@ -3020,6 +3066,7 @@ const WhatsAppModule: React.FC<WhatsAppModuleProps> = ({ openConversationId, ope
             deptById={deptById}
             drafts={listDrafts}
             mutedIds={mutedIds}
+            pinnedIds={pinnedIds}
             failedSends={failedSends}
             archivedIds={archivedIds}
             showChannelName={channels.length > 1}
@@ -3229,7 +3276,17 @@ const WhatsAppModule: React.FC<WhatsAppModuleProps> = ({ openConversationId, ope
                 {/* Procurar dentro da conversa. Primeiro do grupo porque é a
                     única ação de LEITURA aqui — as outras mexem no atendimento,
                     e essa distância evita o clique errado com a mão apressada. */}
-                <button onClick={() => setThreadSearchOpen(o => !o)} title="Procurar nesta conversa (Ctrl+F)"
+                {/* Fixar no topo. Vizinha da busca porque as duas são ações sobre a
+                    MINHA lista, não sobre o atendimento — e nenhuma delas manda
+                    nada para o cliente. */}
+                <button onClick={() => void togglePin(selected.id)}
+                  title={pinnedIds.has(selected.id) ? 'Desafixar do topo da lista' : 'Fixar no topo da lista'}
+                  aria-label={pinnedIds.has(selected.id) ? 'Desafixar do topo' : 'Fixar no topo'}
+                  aria-pressed={pinnedIds.has(selected.id)}
+                  className={`flex-shrink-0 w-9 h-9 rounded-lg flex items-center justify-center transition ${pinnedIds.has(selected.id) ? 'bg-amber-100 text-amber-700 hover:bg-amber-200' : 'bg-[#f3f2ef] hover:bg-amber-50 text-slate-600 hover:text-amber-700'}`}>
+                  {pinnedIds.has(selected.id) ? <PinOff size={16} /> : <Pin size={16} />}
+                </button>
+                                <button onClick={() => setThreadSearchOpen(o => !o)} title="Procurar nesta conversa (Ctrl+F)"
                   aria-label="Procurar nesta conversa" aria-pressed={threadSearchOpen}
                   className={`flex-shrink-0 w-9 h-9 rounded-lg flex items-center justify-center transition ${threadSearchOpen ? 'bg-amber-100 text-amber-700 hover:bg-amber-200' : 'bg-[#f3f2ef] hover:bg-amber-50 text-slate-600 hover:text-amber-700'}`}>
                   <Search size={16} />
@@ -3340,6 +3397,11 @@ const WhatsAppModule: React.FC<WhatsAppModuleProps> = ({ openConversationId, ope
                           onClick={() => setHeaderMenuOpen(false)} />
                         <div role="menu" className="absolute right-0 top-11 z-50 w-56 rounded-xl bg-white shadow-xl border border-[#e7e5df] py-1.5 overflow-hidden">
                           <button className={item} onClick={run(() => setThreadSearchOpen(true))}><Search size={16} className="text-slate-400" /> Procurar na conversa</button>
+                          <button className={item} onClick={run(() => void togglePin(selected.id))}>
+                            {pinnedIds.has(selected.id)
+                              ? <><PinOff size={16} className="text-amber-500" /> Desafixar do topo</>
+                              : <><Pin size={16} className="text-slate-400" /> Fixar no topo da lista</>}
+                          </button>
                           {!panelDocked && (
                             <button className={item} onClick={run(() => setMobilePanelOpen(true))}><Info size={16} className="text-slate-400" /> Detalhes do contato</button>
                           )}

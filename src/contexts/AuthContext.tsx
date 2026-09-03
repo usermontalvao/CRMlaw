@@ -3,6 +3,7 @@ import { supabase } from '../config/supabase';
 import type { User, Session } from '@supabase/supabase-js';
 import { limpaMemoriaWa } from '../services/whatsapp/sessionCache';
 import { esqueceCanaisPermitidos } from '../services/whatsapp/conversations';
+import { pinStore } from '../services/whatsapp/pinStore';
 
 // ── Anti-força-bruta do login staff (defesa em profundidade) ─────────────────
 // Chama a Edge Function `staff-login-guard`. Fail-open: qualquer erro
@@ -264,6 +265,11 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     // Idem para os canais que o servidor autorizou: eles são o insumo da
     // segunda tranca da lista, e são de QUEM saiu.
     esqueceCanaisPermitidos();
+    // E as conversas FIXADAS, pela mesma razão: são a ordem de trabalho de quem
+    // saiu. Sem isto, entrar com outra conta na mesma aba mostraria a lista
+    // reordenada pelas marcas do anterior — e as marcas dele viriam junto,
+    // porque o store só lê o banco uma vez por sessão.
+    pinStore.reset();
     if (opts?.redirect !== false) window.location.href = '/';
   };
 

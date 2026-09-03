@@ -1,7 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import {
   Clock, Pencil, Ban, BellOff, AlertTriangle, Users, Timer, FileText, CheckCircle2, ArrowRightLeft,
-  Check, X, PenLine, Eye,
+  Check, X, PenLine, Eye, Pin,
 } from 'lucide-react';
 import type {
   WhatsAppConversation, WhatsAppChannel, WhatsAppDepartment, WhatsAppPresence,
@@ -120,6 +120,8 @@ export const ConversationListItem: React.FC<{
   statusCls: string;
   docStatus: 'awaiting' | 'ready' | null;
   muted: boolean;
+  /** Fixada no topo por este usuário. */
+  pinned?: boolean;
   draftPreview: string;
   funnelLabels: FunnelLabel[];
   /**
@@ -173,7 +175,7 @@ export const ConversationListItem: React.FC<{
   signatureChip?: SignatureListChip | null;
   onSelect: (id: string) => void;
   onDismissTracking?: () => void;
-}> = React.memo(({ c, active, channel: ch, dept, privateMode, statusKey, statusLabel, statusCls, docStatus: ds, muted, draftPreview, funnelLabels, aiChip = null, elapsedMinutes, slaPolicyFor, failedSends = 0, archived = false, showChannelName = false, busy = false, sweep = null, signatureChip = null, onSelect, onDismissTracking }) => {
+}> = React.memo(({ c, active, channel: ch, dept, privateMode, statusKey, statusLabel, statusCls, docStatus: ds, muted, pinned = false, draftPreview, funnelLabels, aiChip = null, elapsedMinutes, slaPolicyFor, failedSends = 0, archived = false, showChannelName = false, busy = false, sweep = null, signatureChip = null, onSelect, onDismissTracking }) => {
   // Com a IA conduzindo, os sinais de espera humana saem de cena — inclusive o
   // relógio vermelho do canto, que contava uma demora que não está havendo.
   const sla = aiChip ? null : slaSignal(c, elapsedMinutes, slaPolicyFor);
@@ -282,6 +284,10 @@ export const ConversationListItem: React.FC<{
                 <Users size={11} className="text-amber-600" />
               </span>
             )}
+            {/* A marca de fixada fica JUNTO DA HORA, e não antes do nome: o
+                nome é o que o olho varre para achar a pessoa, e um ícone à
+                frente dele desalinharia todas as linhas por causa de duas. */}
+            {pinned && <Pin size={11} className="text-slate-400 flex-shrink-0" aria-label="Fixada no topo" />}
             {muted && <BellOff size={11} className="text-slate-400 flex-shrink-0" />}
             <span className={`text-[11px] tabular-nums ${naoLida ? 'font-semibold text-[#b45309]' : 'text-[#9aa0a6]'}`}>{formatTime(previa.at)}</span>
           </span>
