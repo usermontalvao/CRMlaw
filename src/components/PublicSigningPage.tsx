@@ -22,6 +22,7 @@ import TelaDeAbertura from './publicSigning/TelaDeAbertura';
 import TelaDeConferencia from './publicSigning/TelaDeConferencia';
 import TelaDeComprovante from './publicSigning/TelaDeComprovante';
 import EtapaDeIdentidade from './publicSigning/EtapaDeIdentidade';
+import { Guia, type PassoDoGuia } from './publicSigning/Guia';
 import {
   AcaoPrimaria,
   AcaoSecundaria,
@@ -191,12 +192,6 @@ const mascararEmail = (bruto?: string | null): string | null => {
  *  visor, para o recorte da captura e para a prévia — os três precisam contar a
  *  mesma história, senão a pessoa enquadra uma coisa e o certificado guarda outra. */
 const FOTO_PROPORCAO = 3 / 4;
-
-/** Segundos de contagem antes da foto sair sozinha. Curto o bastante para não
- *  cansar, longo o bastante para a pessoa entender que vai disparar. */
-const SEGUNDOS_CONTAGEM = 5;
-/** Teto de fotos automáticas por etapa — ver o comentário em fotosAutomaticas. */
-const MAX_FOTOS_AUTOMATICAS = 3;
 
 /**
  * Carimba a evidência dentro dos PIXELS da foto.
@@ -458,8 +453,21 @@ const PdfRenderer: React.FC<PdfRendererProps> = ({ url, onLoad }) => {
     return () => ro.disconnect();
   }, []);
 
+  /*
+    A LARGURA DA PÁGINA.
+
+    Era `width={containerWidth}`: no celular isso é o certo (a folha ocupa a
+    tela inteira), mas num monitor de 1.440 px a página do PDF era esticada de
+    ponta a ponta, sem margem nenhuma — uma linha de texto atravessando meio
+    metro. A partir do tablet a folha vira uma COLUNA de leitura centrada, com
+    o cinza da página em volta, igual à folha do Word.
+  */
+  const larguraDaPagina = containerWidth >= 900
+    ? Math.min(containerWidth - 48, 1040)
+    : containerWidth;
+
   return (
-    <div ref={containerRef} className="w-full bg-[#f8f7f5]">
+    <div ref={containerRef} className="w-full bg-[#f8f7f5] lg:py-7">
       <Document
         file={url}
         onLoadSuccess={({ numPages: n }) => { setNumPages(n); onLoad?.(); }}
@@ -467,14 +475,18 @@ const PdfRenderer: React.FC<PdfRendererProps> = ({ url, onLoad }) => {
         error={null}
       >
         {containerWidth > 0 && Array.from({ length: numPages }, (_, i) => (
-          <Page
+          <div
             key={i}
-            pageNumber={i + 1}
-            width={containerWidth}
-            renderTextLayer={false}
-            renderAnnotationLayer={false}
-            className="block"
-          />
+            className="mx-auto w-fit lg:mb-6 lg:overflow-hidden lg:rounded-[3px] lg:shadow-[0_1px_2px_rgb(15_23_42_/_0.06),0_12px_28px_-10px_rgb(15_23_42_/_0.18)]"
+          >
+            <Page
+              pageNumber={i + 1}
+              width={larguraDaPagina}
+              renderTextLayer={false}
+              renderAnnotationLayer={false}
+              className="block"
+            />
+          </div>
         ))}
       </Document>
     </div>
@@ -603,6 +615,42 @@ const PublicSigningPage: React.FC<PublicSigningPageProps> = ({ token }) => {
         box-shadow: 0 4px 6px -1px rgb(0 0 0 / 0.1), 0 2px 4px -2px rgb(0 0 0 / 0.1) !important;
         margin: 0 0 20px !important;
         transform-origin: top center !important;
+      }
+
+      /*
+        A FOLHA NO MONITOR.
+
+        O docx-preview entrega a folha no tamanho que o Word gravou: A4 tem
+        794 px. Num monitor de 1.440 px isso é metade da tela de papel e a
+        outra metade de cinza — a letra fica do tamanho de uma miniatura e
+        obriga a aproximar o rosto. Aqui a folha cresce junto com a janela,
+        com zoom (e nao transform) porque a altura precisa crescer tambem: com
+        scale, uma pagina passaria por cima da seguinte.
+      */
+      @media (min-width: 1024px) {
+        /* Rede de seguranca: uma folha DEITADA (A4 paisagem) ja nasce com 1123
+           px e, ampliada, passa da janela. Sem isto ela seria simplesmente
+           cortada, porque o leitor inteiro roda dentro de um overflow-hidden.
+           O eixo Y vai travado junto de proposito: sozinho, o overflow-x tambem
+           promoveria o Y a auto e criaria um segundo scroller. */
+        .docx-responsive {
+          overflow-x: auto;
+          overflow-y: hidden;
+        }
+        .docx-responsive .docx-wrapper-wrapper {
+          padding: 28px 24px 36px !important;
+        }
+        .docx-responsive section.docx-wrapper {
+          zoom: 1.16;
+          margin-bottom: 26px !important;
+          box-shadow: 0 1px 2px rgb(15 23 42 / 0.06), 0 12px 28px -10px rgb(15 23 42 / 0.18) !important;
+        }
+      }
+
+      @media (min-width: 1400px) {
+        .docx-responsive section.docx-wrapper {
+          zoom: 1.3;
+        }
       }
 
       /* Scrollbar */
@@ -743,6 +791,34 @@ const PublicSigningPage: React.FC<PublicSigningPageProps> = ({ token }) => {
   const [docxLoading, setDocxLoading] = useState(false);
   const [pdfFrameLoaded, setPdfFrameLoaded] = useState(false);
   const [docxRendered, setDocxRendered] = useState(false);
+
+  /**
+   * Protege o trecho crítico entre o toque em “Assinar documento” e a resposta
+   * final do servidor.
+   *
+   * O overlay já elimina saídas dentro da interface; `beforeunload` cobre o que
+   * fica fora dela (fechar a aba, recarregar e navegar para outro endereço).
+   * Navegadores modernos mostram a mensagem nativa deles — o texto customizado
+   * é deliberadamente ignorado por segurança. A trava sai no mesmo instante em
+   * que o envio termina ou falha, para nunca prender a pessoa no comprovante.
+   */
+  useEffect(() => {
+    if (!loading) return;
+
+    const tituloAnterior = document.title;
+    const protegerSaida = (event: BeforeUnloadEvent) => {
+      event.preventDefault();
+      event.returnValue = '';
+    };
+
+    document.title = 'Enviando assinatura — mantenha esta página aberta';
+    window.addEventListener('beforeunload', protegerSaida);
+
+    return () => {
+      window.removeEventListener('beforeunload', protegerSaida);
+      document.title = tituloAnterior;
+    };
+  }, [loading]);
 
   const [authConfig, setAuthConfig] = useState<PublicAuthConfig>({ google: true, email: true, phone: true, whatsapp: false });
 
@@ -925,19 +1001,22 @@ const PublicSigningPage: React.FC<PublicSigningPageProps> = ({ token }) => {
     isSignModalOpen && modalStep === 'facial' && cameraActive && !facialData,
   );
 
-  /** Espelho da estabilidade para o cronômetro ler sem se reiniciar. */
-  const estavelRef = useRef(false);
-  estavelRef.current = deteccaoRosto.estavel;
+  /*
+    QUEM DISPARA A FOTO É O DEDO.
 
-  /** Contagem regressiva visível antes do disparo automático (null = parada). */
-  const [contagemFoto, setContagemFoto] = useState<number | null>(null);
-  /**
-   * Quantas fotos já saíram sozinhas. O disparo automático é ótimo até a IA
-   * reprovar: se a pessoa deixar a mão no rosto e o aparelho apontado, cada
-   * repetição vira uma chamada de visão paga. Depois de MAX_FOTOS_AUTOMATICAS
-   * a câmera continua ligada, mas quem dispara é o dedo.
-   */
-  const [fotosAutomaticas, setFotosAutomaticas] = useState(0);
+    Havia aqui um disparo automático: com o rosto parado no oval, corria uma
+    contagem de 5…1 e a foto saía sozinha (com teto de 3 disparos por etapa,
+    para uma reprovação em série não virar uma fila de chamadas de visão pagas).
+    Saiu por decisão do escritório: a pessoa deixa de escolher a hora da própria
+    foto, e uma contagem correndo apressa justamente quem está com dificuldade
+    de se enquadrar.
+
+    O que sobrou é o que já existia como plano B: o botão, liberado só quando o
+    detector vê um rosto. `deteccaoRosto.liberado` continua tendo escapes de
+    propósito (12 s sem detecção, ou modelo que não carrega, destravam o botão)
+    — impedir alguém de assinar custa um contrato com prazo, e detector de rosto
+    erra mais com pele escura e luz fraca. Ver `useDeteccaoDeRosto`.
+  */
   const [cameraError, setCameraError] = useState<string | null>(null);
   const [downloading, setDownloading] = useState(false);
 
@@ -1422,47 +1501,6 @@ const PublicSigningPage: React.FC<PublicSigningPageProps> = ({ token }) => {
   }, [cameraActive, modalStep]);
 
   /**
-   * Disparo automático da selfie.
-   *
-   * Enquanto o rosto estiver enquadrado e parado, corre uma contagem visível de
-   * MAX_FOTOS_AUTOMATICAS…1 e a foto sai sozinha. Se o rosto sair do lugar no
-   * meio da contagem, ela é cancelada — a foto nunca sai de surpresa.
-   */
-  useEffect(() => {
-    if (modalStep !== 'facial' || !cameraActive || facialData || fotosAutomaticas >= MAX_FOTOS_AUTOMATICAS) {
-      setContagemFoto(null);
-      return;
-    }
-
-    // O cronômetro NÃO depende de `estavel` nas dependências do efeito: se
-    // dependesse, cada oscilação do detector recriaria o intervalo e a contagem
-    // reiniciava do começo, sem nunca chegar a zero — era por isso que a foto
-    // não saía sozinha. Ele roda solto e lê o estado mais recente por ref.
-    let restante: number | null = null;
-    const t = window.setInterval(() => {
-      if (!estavelRef.current) {
-        if (restante !== null) {
-          restante = null;
-          setContagemFoto(null);
-        }
-        return;
-      }
-
-      restante = restante === null ? SEGUNDOS_CONTAGEM : restante - 1;
-      if (restante <= 0) {
-        restante = null;
-        setContagemFoto(null);
-        setFotosAutomaticas((n) => n + 1);
-        void capturePhoto();
-        return;
-      }
-      setContagemFoto(restante);
-    }, 1000);
-
-    return () => window.clearInterval(t);
-  }, [modalStep, cameraActive, facialData, fotosAutomaticas]);
-
-  /**
    * Foto reprovada pela IA → devolve a câmera sozinho, com o motivo na tela.
    *
    * É aqui que a obstrução (mão no rosto, óculos escuros cobrindo) é de fato
@@ -1480,11 +1518,6 @@ const PublicSigningPage: React.FC<PublicSigningPageProps> = ({ token }) => {
     }, 2600);
     return () => window.clearTimeout(t);
   }, [modalStep, facialValidating, facialValidation]);
-
-  // Ao sair da etapa da foto, zera o contador de disparos automáticos.
-  useEffect(() => {
-    if (modalStep !== 'facial') setFotosAutomaticas(0);
-  }, [modalStep]);
 
   // Foto aprovada → avança automaticamente para a etapa de autorização/confirmação.
   // Mostra "Foto aprovada!" por um instante antes de avançar.
@@ -1560,12 +1593,16 @@ const PublicSigningPage: React.FC<PublicSigningPageProps> = ({ token }) => {
           auto_select: false,
         });
         
+        /* A largura sai do PRÓPRIO nó, não do pai: o botão agora mora dentro
+           de uma moldura com padding, e medir o pai devolvia uma largura maior
+           que o vão — o widget vazava por baixo da borda. 400 px é o teto que
+           a biblioteca do Google aceita. */
         const containerW = Math.floor(
-          buttonEl.parentElement?.getBoundingClientRect().width ||
-            buttonEl.getBoundingClientRect().width ||
+          buttonEl.getBoundingClientRect().width ||
+            buttonEl.parentElement?.getBoundingClientRect().width ||
             320
         );
-        const width = Math.max(280, Math.min(420, containerW));
+        const width = Math.max(240, Math.min(400, containerW));
 
         // @ts-ignore
         google.accounts.id.renderButton(buttonEl, {
@@ -3891,9 +3928,170 @@ const PublicSigningPage: React.FC<PublicSigningPageProps> = ({ token }) => {
     );
   }
 
+  /*
+    ══════════════════════════════════════════════════════════════════════════
+    O ROTEIRO DO GUIA — a próxima coisa a tocar, etapa por etapa.
+    ══════════════════════════════════════════════════════════════════════════
+
+    Quem assina aqui está no celular (99% das assinaturas) e quase sempre nunca
+    assinou um contrato pelo telefone. Cada tela declara a FILA do que fazer, na
+    ordem; o guia aponta o primeiro item ainda não cumprido e anda sozinho
+    conforme `pronto` vai virando verdade — é isso que faz ele acompanhar campo
+    a campo, em vez de despejar tudo de uma vez.
+
+    Ele só aparece depois de hesitação e some no primeiro toque: quem já sabe o
+    caminho nunca vê professor nenhum. As regras inteiras estão em `Guia.tsx`.
+
+    Uma condição de `pronto` ERRADA trava o guia, porque ele nunca passa para o
+    próximo item — por isso cada uma espelha exatamente o que a tela mostra.
+  */
+  /* Função pura e não hook: este trecho vive DEPOIS dos returns antecipados
+     (comprovante, recusa, carregando), e um hook aqui mudaria a ordem dos
+     hooks entre renders — foi exatamente o erro "Rendered more hooks than
+     during the previous render" que apareceu no primeiro teste. O `Guia`
+     guarda a lista numa gaveta, então recalcular a cada render não custa. */
+  const passosDoGuia: PassoDoGuia[] = (() => {
+    // O modal dos termos abre POR CIMA da etapa de confirmação: enquanto ele
+    // está aberto, a única coisa a fazer é aceitar (ou fechar).
+    if (showTermsModal) {
+      return [{ alvo: '[data-guia="aceite-modal"]', texto: 'Toque em “Li e aceito”' }];
+    }
+
+    if (!isSignModalOpen) {
+      if (signer?.status === 'signed') return [];
+      return [{ alvo: '[data-guia="assinar"]', texto: 'Toque para assinar', redondo: true }];
+    }
+
+    switch (modalStep) {
+      // ── Etapa 1 · identidade ──────────────────────────────────────────────
+      case 'google_auth': {
+        // O guia aponta o caminho RECOMENDADO que estiver disponível: entrar
+        // pela conta é um toque, e receber código é esperar.
+        if (googleUser) return [];
+        if (authConfig.google) {
+          // Abaixo, e não acima: o que fica acima deste botão é exatamente a
+          // linha "Recomendado · sem esperar código", que o cartão taparia.
+          return [{ alvo: '[data-guia="google"]', texto: 'Entre com sua conta Google', lado: 'abaixo' }];
+        }
+        const primeiro =
+          authConfig.whatsapp ? { marca: 'metodo-whatsapp', onde: 'no WhatsApp' }
+          : authConfig.email ? { marca: 'metodo-email', onde: 'no e-mail' }
+          : authConfig.phone ? { marca: 'metodo-sms', onde: 'por SMS' }
+          : null;
+        return primeiro
+          ? [{ alvo: `[data-guia="${primeiro.marca}"]`, texto: `Toque para receber o código ${primeiro.onde}` }]
+          : [];
+      }
+
+      case 'phone_otp':
+        return phoneOtpSent
+          ? [{ alvo: '[data-guia="codigo-telefone"]', texto: 'Digite os 6 dígitos que chegaram' }]
+          : [{ alvo: '[data-guia="telefone"]', texto: 'Confirme seu número com DDD' }];
+
+      case 'email_otp':
+        return emailOtpSent
+          ? [{ alvo: '[data-guia="codigo-email"]', texto: 'Digite os 6 dígitos que chegaram' }]
+          : [{ alvo: '[data-guia="email"]', texto: 'Confirme seu e-mail' }];
+
+      // ── Etapa 2 · dados ───────────────────────────────────────────────────
+      case 'data':
+        return [
+          {
+            alvo: '[data-guia="nome"]',
+            texto: 'Escreva seu nome completo',
+            pronto: signerData.name.trim().length >= 3,
+          },
+          {
+            alvo: '[data-guia="cpf"]',
+            texto: 'Agora o seu CPF',
+            pronto: enteredCpfDigits.length === 11 && !cpfInvalido && !cpfMismatch,
+          },
+          { alvo: '[data-guia="continuar-dados"]', texto: 'Pronto — pode continuar' },
+        ];
+
+      // ── Etapa 3 · assinatura ──────────────────────────────────────────────
+      case 'signature':
+        return [
+          { alvo: '[data-guia="quadro"]', texto: 'Arraste o dedo aqui dentro', pronto: hasSignature },
+          { alvo: '[data-guia="continuar-assinatura"]', texto: 'Ficou boa? Continue' },
+        ];
+
+      // ── Etapa 4 · localização ─────────────────────────────────────────────
+      case 'location':
+        return locationData
+          ? [{ alvo: '[data-guia="continuar-local"]', texto: 'Toque para continuar' }]
+          : [{ alvo: '[data-guia="permitir-local"]', texto: 'Toque e autorize no aviso do navegador' }];
+
+      // ── Etapa 5 · foto ────────────────────────────────────────────────────
+      case 'facial':
+        // Enquanto a foto está sendo conferida não há o que tocar: o guia sai
+        // da frente.
+        if (facialData || facialValidating) return [];
+        return cameraActive
+          ? [{ alvo: '[data-guia="tirar-foto"]', texto: 'Enquadre o rosto e toque' }]
+          : [{ alvo: '[data-guia="abrir-camera"]', texto: 'Toque para ligar a câmera' }];
+
+      // ── Etapa 6 · confirmar ───────────────────────────────────────────────
+      case 'confirm':
+        return [
+          { alvo: '[data-guia="aceite"]', texto: 'Marque o aceite dos termos', pronto: termsAccepted },
+          { alvo: '[data-guia="assinar-agora"]', texto: 'Agora sim: assine o documento' },
+        ];
+
+      default:
+        return [];
+    }
+  })();
+
+  /* A chave reinicia a espera a cada tela nova — inclusive quando a MESMA
+     etapa troca de cara (o código já enviado, a câmera que ligou). */
+  const chaveDoGuia = [
+    isSignModalOpen ? modalStep : 'leitor',
+    showTermsModal ? 'termos' : '',
+    phoneOtpSent ? 'otp' : '', emailOtpSent ? 'otp' : '', cameraActive ? 'camera' : '',
+  ].join('|');
+
+  /* Desligado quando há outra coisa por cima ou quando o envio está em curso:
+     nesses momentos não existe "próxima coisa a tocar". */
+  const guiaLigado =
+    activeTab !== 'history' &&
+    !isRefuseModalOpen &&
+    !loading;
+
+  /*
+    O NOME DO DOCUMENTO, escrito uma vez e usado nos dois lugares.
+
+    No celular ele é a segunda linha do cabeçalho. No desktop essa segunda
+    linha era uma faixa branca inteira ocupada por 13 px de texto — e o
+    cabeçalho todo virava um fio de nada acima de uma folha solta no meio de
+    um mar cinza. Lá ele entra na MESMA linha da marca.
+  */
+  const nomeDoDocumentoNoTopo = request?.document_name ? (
+    <>
+      <span
+        className="flex-none text-[9px] font-bold uppercase tracking-[0.18em] lg:text-[10px]"
+        style={{ color: '#ea580c' }}
+      >
+        Assinar
+      </span>
+      <span
+        className="min-w-0 flex-1 truncate text-[13px] font-semibold tracking-[-0.01em] lg:text-[15px]"
+        style={{ color: TINTA }}
+        title={request.document_name}
+      >
+        {request.document_name}
+      </span>
+    </>
+  ) : null;
+
   return (
     <>
       {loadingPortal}
+
+      {/* O guia. Vive fora das telas, num portal, porque ele aponta tanto o
+          botão do leitor quanto os controles dentro do modal. */}
+      <Guia passos={passosDoGuia} chave={chaveDoGuia} ligado={guiaLigado} />
+
       <div className="flex h-[100dvh] min-h-[100dvh] min-w-0 flex-col overflow-hidden overscroll-none" style={{ background: '#f8fafc' }}>
       {/*
         O cabeçalho da leitura.
@@ -3909,57 +4107,59 @@ const PublicSigningPage: React.FC<PublicSigningPageProps> = ({ token }) => {
       */}
       <div className="h-[2.5px] w-full flex-none" style={{ background: 'linear-gradient(90deg,#c2410c,#ea580c 60%,#f97316)' }} />
       <header
-        className="flex-none border-b bg-white px-4 pb-3 sm:px-5"
+        className="flex-none border-b bg-white px-4 pb-3 sm:px-5 lg:px-8 lg:pb-4"
         style={{ borderColor: '#e7e5e4', paddingTop: 'max(0.7rem, env(safe-area-inset-top))' }}
       >
-        <div className="flex min-w-0 items-center justify-between gap-3">
-          <div className="flex min-w-0 items-center gap-2">
-            <BrandLogo iconOnly size="xs" />
-            <span style={{ fontFamily: BRAND_SERIF, fontWeight: 700, fontSize: 13, letterSpacing: '-0.012em', color: '#1A1613' }}>
-              {BRAND_WORDMARK.lead}
-              <span style={{ color: BRAND_DOT }}>{BRAND_WORDMARK.dot}</span>
-              <span style={{ fontWeight: 400, color: '#a8a29e' }}>{BRAND_WORDMARK.tld}</span>
-            </span>
+        {/* A mesma coluna de leitura da folha: no monitor largo, marca e
+            histórico param de morar em cantos opostos de 1.400 px. */}
+        <div className="mx-auto w-full max-w-[1120px]">
+          <div className="flex min-w-0 items-center justify-between gap-3 lg:gap-6">
+            <div className="flex min-w-0 flex-none items-center gap-2 lg:gap-2.5">
+              <BrandLogo iconOnly size="xs" />
+              <span className="text-[13px] lg:text-[15px]" style={{ fontFamily: BRAND_SERIF, fontWeight: 700, letterSpacing: '-0.012em', color: '#1A1613' }}>
+                {BRAND_WORDMARK.lead}
+                <span style={{ color: BRAND_DOT }}>{BRAND_WORDMARK.dot}</span>
+                <span style={{ fontWeight: 400, color: '#a8a29e' }}>{BRAND_WORDMARK.tld}</span>
+              </span>
+            </div>
+
+            {/* No desktop o contexto entra aqui, entre a marca e o histórico. */}
+            {nomeDoDocumentoNoTopo && (
+              <div className="hidden min-w-0 flex-1 items-baseline gap-2.5 border-l pl-6 lg:flex" style={{ borderColor: '#ede9e6' }}>
+                {nomeDoDocumentoNoTopo}
+              </div>
+            )}
+
+            <button
+              type="button"
+              onClick={() => setActiveTab('history')}
+              className="flex min-h-9 flex-shrink-0 items-center gap-1.5 rounded-lg border px-2.5 py-1.5 text-[11px] font-semibold transition-colors hover:bg-slate-50 lg:min-h-10 lg:gap-2 lg:rounded-xl lg:px-3.5 lg:text-[12.5px]"
+              style={{ borderColor: '#e2e8f0', color: TINTA_2 }}
+              title="Histórico"
+            >
+              <Clock className="h-3.5 w-3.5 lg:h-4 lg:w-4" />
+              Histórico
+            </button>
           </div>
-          <button
-            type="button"
-            onClick={() => setActiveTab('history')}
-            className="flex min-h-9 flex-shrink-0 items-center gap-1.5 rounded-lg border px-2.5 py-1.5 text-[11px] font-semibold transition-colors hover:bg-slate-50"
-            style={{ borderColor: '#e2e8f0', color: TINTA_2 }}
-            title="Histórico"
-          >
-            <Clock className="w-3.5 h-3.5" />
-            Histórico
-          </button>
+
+          {/*
+            O que está sendo assinado — em UMA linha de contexto, não em três.
+
+            O bloco trazia o rótulo, o nome do documento em duas linhas e, logo
+            abaixo, o nome do signatário. Só que os documentos do escritório
+            nascem com o nome da pessoa no título ("KIT CONSUMIDOR - PEDRO
+            RODRIGUES MONTALVAO NETO"): a terceira linha repetia, em caixa-alta,
+            o que a segunda já dizia — e as três juntas comiam um quarto da tela
+            do celular antes de o documento começar.
+
+            No desktop esta linha não existe: ela já subiu para junto da marca.
+          */}
+          {nomeDoDocumentoNoTopo && (
+            <div className="mt-2 flex min-w-0 items-baseline gap-2 lg:hidden">
+              {nomeDoDocumentoNoTopo}
+            </div>
+          )}
         </div>
-
-        {/*
-          O que está sendo assinado — em UMA linha de contexto, não em três.
-
-          O bloco trazia o rótulo, o nome do documento em duas linhas e, logo
-          abaixo, o nome do signatário. Só que os documentos do escritório
-          nascem com o nome da pessoa no título ("KIT CONSUMIDOR - PEDRO
-          RODRIGUES MONTALVAO NETO"): a terceira linha repetia, em caixa-alta, o
-          que a segunda já dizia — e as três juntas comiam um quarto da tela do
-          celular antes de o documento começar.
-        */}
-        {request?.document_name && (
-          <div className="mt-2 flex min-w-0 items-baseline gap-2">
-            <span
-              className="flex-none text-[9px] font-bold uppercase tracking-[0.18em]"
-              style={{ color: '#ea580c' }}
-            >
-              Assinar
-            </span>
-            <span
-              className="min-w-0 flex-1 truncate text-[13px] font-semibold tracking-[-0.01em]"
-              style={{ color: TINTA }}
-              title={request.document_name}
-            >
-              {request.document_name}
-            </span>
-          </div>
-        )}
       </header>
 
       {/* Document Viewer - Ocupa toda a tela */}
@@ -4040,7 +4240,45 @@ const PublicSigningPage: React.FC<PublicSigningPageProps> = ({ token }) => {
         (() => {
           const isWaiting = !canOpenSignModal || queuedOpenSignModal;
           const isButtonDisabled = loading || isSignModalOpen;
-          const buttonClass = `fixed left-1/2 z-50 flex min-h-12 w-[calc(100%_-_2rem)] max-w-[22rem] -translate-x-1/2 items-center justify-center gap-2 rounded-full px-6 py-3.5 text-[15px] font-bold tracking-[-0.01em] text-white transition-all duration-200 whitespace-nowrap sm:w-auto sm:px-8 ${isButtonDisabled ? 'bg-slate-400 cursor-not-allowed opacity-80 shadow-none ring-0' : isWaiting ? 'bg-orange-600/70 hover:bg-orange-600/70 cursor-wait shadow-[0_10px_24px_rgba(234,88,12,0.24)] ring-1 ring-white/10' : 'bg-orange-600 hover:bg-orange-700 shadow-[0_16px_30px_rgba(234,88,12,0.28),0_6px_18px_rgba(15,23,42,0.14)] ring-1 ring-white/12 hover:-translate-x-1/2 hover:-translate-y-0.5 hover:shadow-[0_20px_36px_rgba(234,88,12,0.32),0_10px_22px_rgba(15,23,42,0.16)] active:scale-95 active:translate-y-0'}`;
+
+          /*
+            O BOTÃO.
+
+            Era um disco de laranja CHAPADO com duas sombras largas e difusas
+            por baixo — de longe parecia um borrão alaranjado apoiado no
+            documento, e o `ring-white/12` que deveria dar acabamento não
+            aparecia em tela nenhuma.
+
+            Agora a peça tem volume de verdade: um degradê curto de cima para
+            baixo (a luz vem de cima, como no resto da interface), um fio de
+            branco POR DENTRO da borda superior, uma sombra curta e escura que
+            assenta a peça e uma sombra longa e difusa que a levanta do papel.
+            É a mesma receita dos botões físicos do sistema: contato + altura,
+            e não uma mancha só.
+
+            O tamanho também subiu (52 px de altura, 54 no desktop): este é o
+            único botão da tela, e ele estava com a mesma altura de um controle
+            secundário.
+          */
+          const acabamentoNormal = [
+            'bg-[linear-gradient(180deg,#fb7c3f_0%,#ea580c_54%,#d94d06_100%)]',
+            'shadow-[inset_0_1px_0_rgba(255,255,255,0.30),0_2px_5px_rgba(124,45,18,0.30),0_12px_26px_-10px_rgba(234,88,12,0.62)]',
+            'hover:shadow-[inset_0_1px_0_rgba(255,255,255,0.34),0_4px_10px_rgba(124,45,18,0.32),0_18px_34px_-12px_rgba(234,88,12,0.70)]',
+            'hover:-translate-x-1/2 hover:-translate-y-[2px] active:translate-y-0 active:scale-[0.985]',
+          ].join(' ');
+
+          const buttonClass = [
+            'fixed left-1/2 z-50 flex min-h-[52px] w-[calc(100%_-_2rem)] max-w-[22rem] -translate-x-1/2',
+            'items-center justify-center gap-2.5 rounded-full px-7 text-[15px] font-bold text-white',
+            'whitespace-nowrap outline-none transition-[transform,box-shadow,opacity] duration-200 ease-out',
+            'focus-visible:ring-2 focus-visible:ring-orange-400 focus-visible:ring-offset-2 focus-visible:ring-offset-[#f8fafc]',
+            'sm:min-h-[54px] sm:w-auto sm:px-9 sm:text-[15.5px]',
+            isButtonDisabled
+              ? 'cursor-not-allowed bg-slate-300 text-slate-500 shadow-none'
+              : isWaiting
+                ? 'cursor-wait bg-[linear-gradient(180deg,#f5a077_0%,#e8794a_54%,#dc6a3a_100%)] shadow-[0_10px_22px_-12px_rgba(234,88,12,0.45)]'
+                : acabamentoNormal,
+          ].join(' ');
 
           return (
             <>
@@ -4064,18 +4302,19 @@ const PublicSigningPage: React.FC<PublicSigningPageProps> = ({ token }) => {
               <button
                 onClick={openSignModal}
                 disabled={isButtonDisabled}
+                data-guia="assinar"
                 className={buttonClass}
                 style={{ WebkitTapHighlightColor: 'transparent', bottom: 'max(1.25rem, env(safe-area-inset-bottom))' }}
               >
                 {(!canOpenSignModal || queuedOpenSignModal) ? (
                     <>
-                      <Loader2 className="w-4 h-4 animate-spin" />
-                      Carregando…
+                      <Loader2 className="h-[17px] w-[17px] animate-spin" />
+                      <span>Carregando…</span>
                     </>
                 ) : (
                     <>
-                      <PenTool className="w-4 h-4" />
-                      Assinar documento
+                      <PenTool className="h-[17px] w-[17px]" />
+                      <span>Assinar documento</span>
                     </>
                 )}
               </button>
@@ -4153,6 +4392,7 @@ const PublicSigningPage: React.FC<PublicSigningPageProps> = ({ token }) => {
               <button onClick={() => setShowTermsModal(false)} className="flex-1 py-2.5 rounded-xl text-sm font-semibold text-slate-600 hover:bg-slate-100">Fechar</button>
               <button
                 onClick={() => { marcarAceiteDosTermos(true); setShowTermsModal(false); }}
+                data-guia="aceite-modal"
                 className="flex-1 py-2.5 rounded-xl text-sm font-bold text-white bg-emerald-600 hover:bg-emerald-700 flex items-center justify-center gap-2"
               >
                 <CheckCircle className="w-4 h-4" />
@@ -4344,6 +4584,7 @@ const PublicSigningPage: React.FC<PublicSigningPageProps> = ({ token }) => {
                           <span className="text-sm font-medium text-[#A0968C]">+55</span>
                         </span>
                         <input
+                          data-guia="telefone"
                           type="tel"
                           inputMode="tel"
                           autoComplete="tel-national"
@@ -4377,6 +4618,7 @@ const PublicSigningPage: React.FC<PublicSigningPageProps> = ({ token }) => {
                     /* ── Tela 2: o código ────────────────────────────────── */
                     <div className="mt-5">
                       <input
+                        data-guia="codigo-telefone"
                         ref={phoneOtpInputRef}
                         type="text"
                         inputMode="numeric"
@@ -4458,6 +4700,7 @@ const PublicSigningPage: React.FC<PublicSigningPageProps> = ({ token }) => {
                     <div className="mt-5">
                       <FieldLabel>Seu e-mail</FieldLabel>
                       <input
+                        data-guia="email"
                         type="email"
                         inputMode="email"
                         value={emailToVerify}
@@ -4496,6 +4739,7 @@ const PublicSigningPage: React.FC<PublicSigningPageProps> = ({ token }) => {
                   {emailOtpSent && (
                     <div className="mt-5">
                       <input
+                        data-guia="codigo-email"
                         ref={emailOtpInputRef}
                         type="text"
                         inputMode="numeric"
@@ -4582,6 +4826,7 @@ const PublicSigningPage: React.FC<PublicSigningPageProps> = ({ token }) => {
                     <FieldLabel>Nome completo</FieldLabel>
                     <input
                       type="text"
+                      data-guia="nome"
                       value={signerData.name}
                       onChange={(e) => setSignerData((d) => ({ ...d, name: e.target.value }))}
                       placeholder="Digite seu nome completo"
@@ -4594,6 +4839,7 @@ const PublicSigningPage: React.FC<PublicSigningPageProps> = ({ token }) => {
                     <input
                       type="text"
                       inputMode="numeric"
+                      data-guia="cpf"
                       maxLength={14}
                       value={signerData.cpf}
                       onChange={(e) => setSignerData((d) => ({ ...d, cpf: formatCpf(e.target.value) }))}
@@ -4617,7 +4863,7 @@ const PublicSigningPage: React.FC<PublicSigningPageProps> = ({ token }) => {
                   </div>
 
                   <div className="mt-5">
-                    <PrimaryButton onClick={() => setModalStep('signature')} disabled={!canProceedFromData}>
+                    <PrimaryButton data-guia="continuar-dados" onClick={() => setModalStep('signature')} disabled={!canProceedFromData}>
                       Continuar
                       <ChevronRight className="h-4 w-4" strokeWidth={2.4} />
                     </PrimaryButton>
@@ -4636,7 +4882,7 @@ const PublicSigningPage: React.FC<PublicSigningPageProps> = ({ token }) => {
                   {/* Folha branca com linha-base e o nome impresso embaixo, como
                       um recibo — no lugar da caixa tracejada com sombra interna
                       e do botão preto "Limpar" de largura total. */}
-                  <div className="relative mt-4 h-[clamp(180px,31dvh,238px)] min-h-[180px] border border-[#E0DAD1] bg-white">
+                  <div data-guia="quadro" className="relative mt-4 h-[clamp(180px,31dvh,238px)] min-h-[180px] border border-[#E0DAD1] bg-white">
                     <canvas
                       ref={canvasRef}
                       className="absolute inset-0 h-full w-full touch-none cursor-crosshair"
@@ -4682,6 +4928,7 @@ const PublicSigningPage: React.FC<PublicSigningPageProps> = ({ token }) => {
 
                   <div className="mt-5">
                     <PrimaryButton
+                      data-guia="continuar-assinatura"
                       onClick={() => { saveSignature(); setModalStep('location'); }}
                       disabled={!hasSignature}
                     >
@@ -4730,12 +4977,12 @@ const PublicSigningPage: React.FC<PublicSigningPageProps> = ({ token }) => {
 
                   <div className="mt-5 flex flex-col gap-2">
                     {locationData ? (
-                      <PrimaryButton onClick={() => setModalStep('facial')}>
+                      <PrimaryButton data-guia="continuar-local" onClick={() => setModalStep('facial')}>
                         Continuar
                         <ChevronRight className="h-4 w-4" strokeWidth={2.4} />
                       </PrimaryButton>
                     ) : (
-                      <PrimaryButton onClick={requestLocation} disabled={locationLoading}>
+                      <PrimaryButton data-guia="permitir-local" onClick={requestLocation} disabled={locationLoading}>
                         {locationLoading ? (
                           <><Loader2 className="h-4 w-4 animate-spin" />Obtendo localização…</>
                         ) : (
@@ -4752,7 +4999,7 @@ const PublicSigningPage: React.FC<PublicSigningPageProps> = ({ token }) => {
                 <div>
                   <StepHeading
                     title={<>Enquadre seu <Accent>rosto</Accent>.</>}
-                    note="A foto sai sozinha quando você estiver enquadrado."
+                    note="Enquadre o rosto no oval e toque no botão para tirar a foto."
                   />
 
                   {/* A conferência é o momento em que a obstrução é julgada, e
@@ -4775,9 +5022,7 @@ const PublicSigningPage: React.FC<PublicSigningPageProps> = ({ token }) => {
                         <div className="text-[12.5px] font-bold text-[#8C3A3A]">Foto não aprovada</div>
                         <div className="mt-0.5 text-[11px] leading-[1.5] text-[#A55]">{facialValidation.message}</div>
                         <div className="mt-1 text-[10.5px] font-semibold text-[#8C3A3A]">
-                          {fotosAutomaticas >= MAX_FOTOS_AUTOMATICAS
-                            ? 'A câmera volta em instantes — depois toque no botão para tentar de novo.'
-                            : 'A câmera volta em instantes para tentarmos de novo.'}
+                          A câmera volta em instantes — depois toque no botão para tentar de novo.
                         </div>
                       </div>
                     </div>
@@ -4862,7 +5107,7 @@ const PublicSigningPage: React.FC<PublicSigningPageProps> = ({ token }) => {
                       </div>
 
                       <div className="mt-5 flex flex-col gap-2">
-                        <PrimaryButton type="button" onClick={startCamera}>
+                        <PrimaryButton data-guia="abrir-camera" type="button" onClick={startCamera}>
                           <Camera className="h-4 w-4" />
                           Ativar câmera
                         </PrimaryButton>
@@ -4921,47 +5166,31 @@ const PublicSigningPage: React.FC<PublicSigningPageProps> = ({ token }) => {
                               deteccaoRosto.estado === 'pronto' ? 'text-emerald-300' : 'text-white/60'
                             }`}
                           >
-                            {contagemFoto !== null ? 'Não se mexa' : deteccaoRosto.dica}
+                            {deteccaoRosto.dica}
                           </span>
 
-                          {/* A foto sai sozinha, mas nunca de surpresa: a
-                              contagem aparece grande e some se o rosto sair. */}
-                          {contagemFoto !== null && (
-                            <span
-                              className="absolute left-1/2 top-[46%] -translate-x-1/2 -translate-y-1/2 tabular-nums"
-                              style={{
-                                fontFamily: BRAND_SERIF,
-                                fontSize: 76,
-                                lineHeight: 1,
-                                color: 'rgba(255,255,255,0.92)',
-                                textShadow: '0 2px 24px rgba(0,0,0,0.55)',
-                              }}
-                            >
-                              {contagemFoto}
-                            </span>
-                          )}
                         </div>
                       </div>
 
                       <div className="mt-5">
-                        {/* A foto sai sozinha quando o rosto está enquadrado; o
-                            botão fica como plano B — para quem prefere disparar
-                            e para depois do teto de disparos automáticos. */}
+                        {/* O único jeito de a foto sair: o dedo. O botão fica
+                            travado até o detector ver um rosto — e o oval fecha
+                            em verde no mesmo instante, que é o sinal de que ele
+                            destravou. */}
                         <PrimaryButton
-                          onClick={() => { setContagemFoto(null); void capturePhoto(); }}
+                          data-guia="tirar-foto"
+                          onClick={() => { void capturePhoto(); }}
                           disabled={!deteccaoRosto.liberado}
                         >
                           <Camera className="h-4 w-4" />
-                          {contagemFoto !== null ? `Tirando em ${contagemFoto}…` : 'Tirar foto agora'}
+                          Tirar foto agora
                         </PrimaryButton>
                         <p className="mt-2 text-center text-[11px] leading-[1.5] text-[#8A8078]">
                           {deteccaoRosto.estado === 'carregando'
                             ? 'Preparando o enquadramento…'
-                            : fotosAutomaticas >= MAX_FOTOS_AUTOMATICAS
-                              ? 'Enquadre o rosto e toque no botão quando estiver pronto.'
-                              : deteccaoRosto.liberado
-                                ? 'A foto sai sozinha assim que o rosto estiver parado no oval.'
-                                : 'O botão libera assim que seu rosto aparecer.'}
+                            : deteccaoRosto.liberado
+                              ? 'Quando estiver bom para você, toque no botão.'
+                              : 'O botão libera assim que seu rosto aparecer.'}
                         </p>
                       </div>
                     </div>
@@ -5028,7 +5257,7 @@ const PublicSigningPage: React.FC<PublicSigningPageProps> = ({ token }) => {
 
                   <div className="mt-4 flex flex-col gap-2">
                     {/* Aceite dos Termos de Uso (LGPD) — obrigatório para assinar */}
-                    <label className="flex cursor-pointer items-center gap-3 border border-[#E0DAD1] bg-white p-3 transition-colors hover:border-[#D2C8BC]">
+                    <label data-guia="aceite" className="flex cursor-pointer items-center gap-3 border border-[#E0DAD1] bg-white p-3 transition-colors hover:border-[#D2C8BC]">
                       <span className="flex-none">
                         <input
                           type="checkbox"
@@ -5053,7 +5282,7 @@ const PublicSigningPage: React.FC<PublicSigningPageProps> = ({ token }) => {
                   </div>
 
                   <div className="mt-5">
-                    <PrimaryButton onClick={handleSign} disabled={loading || !termsAccepted}>
+                    <PrimaryButton data-guia="assinar-agora" onClick={handleSign} disabled={loading || !termsAccepted}>
                       {loading ? (
                         <><Loader2 className="h-4 w-4 animate-spin" />Enviando…</>
                       ) : (

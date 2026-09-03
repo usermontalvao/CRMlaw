@@ -139,7 +139,7 @@ const AssinaturaPublicaPreview: React.FC = () => {
               refBotaoGoogle={(el) => {
                 if (!el || el.childElementCount) return;
                 el.innerHTML = `
-                  <div style="display:inline-flex;align-items:center;gap:10px;height:40px;padding:0 16px;
+                  <div style="display:flex;width:100%;align-items:center;justify-content:center;gap:10px;height:40px;padding:0 16px;
                               border:1px solid #dadce0;border-radius:4px;background:#fff;
                               font:500 14px Roboto,system-ui,sans-serif;color:#3c4043">
                     <svg width="18" height="18" viewBox="0 0 48 48">

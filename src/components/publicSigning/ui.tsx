@@ -85,6 +85,74 @@ const COR_DO_TOM: Record<Tom, string> = {
     @media (prefers-reduced-motion: reduce) {
       .ap-anima, .ap-anima * { animation-duration: .01ms !important; animation-iteration-count: 1 !important }
     }
+
+    /* ── O GUIA ────────────────────────────────────────────────────────────
+       As peças de quem aponta a próxima coisa a tocar (ver Guia.tsx). Moram
+       aqui, junto das outras animações públicas, porque é uma folha de estilo
+       só para toda a página do cliente.
+
+       A camada é fixa e SEM eventos: o guia é um conselho, não um pedágio. Os
+       filhos usam coordenadas de tela (a camada cobre a tela inteira a partir
+       de 0,0), então a posição sai direto do getBoundingClientRect do alvo. */
+    .ap-guia { position: fixed; inset: 0; z-index: 100; pointer-events: none; }
+
+    .ap-guia-foco {
+      position: absolute; border-radius: 14px;
+      border: 1.5px solid rgba(234,88,12,.9);
+      opacity: 0; transition: opacity .3s ease;
+      animation: ap-guia-respira 3s ease-in-out infinite;
+    }
+    .ap-guia-foco.ap-guia-redondo { border-radius: 999px; }
+    @keyframes ap-guia-respira {
+      0%, 100% { box-shadow: 0 0 0 3px rgba(234,88,12,.07), 0 0 18px 2px rgba(234,88,12,.13) }
+      50%      { box-shadow: 0 0 0 5px rgba(234,88,12,.13), 0 0 28px 6px rgba(234,88,12,.22) }
+    }
+
+    .ap-guia-cartao {
+      position: absolute; display: flex; align-items: center; gap: 11px;
+      padding: 10px 14px; border-radius: 13px;
+      background: #fff; border: 1px solid #efe7e0;
+      box-shadow: 0 14px 34px -14px rgba(15,23,42,.40), 0 2px 6px rgba(15,23,42,.05);
+      max-width: calc(100vw - 24px);
+      opacity: 0; transform: translateY(5px);
+      transition: opacity .3s ease, transform .3s cubic-bezier(.2,.8,.2,1);
+    }
+    .ap-guia-contador {
+      display: block; margin-bottom: 3px;
+      font-size: 8.5px; font-weight: 800; letter-spacing: .16em;
+      text-transform: uppercase; color: #ea580c;
+    }
+    .ap-guia-texto {
+      font-size: 12.5px; font-weight: 600; line-height: 1.32;
+      letter-spacing: -.01em; color: #0f172a;
+    }
+    .ap-guia-seta { flex: none; color: #ea580c; display: flex; animation: ap-guia-acena 2.6s ease-in-out infinite }
+    @keyframes ap-guia-acena {
+      0%, 100% { transform: translateY(-1.5px); opacity: .7 }
+      50%      { transform: translateY(2px); opacity: 1 }
+    }
+    .ap-guia-abaixo .ap-guia-seta { animation-name: ap-guia-acena-cima }
+    @keyframes ap-guia-acena-cima {
+      0%, 100% { transform: rotate(180deg) translateY(-1.5px); opacity: .7 }
+      50%      { transform: rotate(180deg) translateY(2px); opacity: 1 }
+    }
+
+    /* o bico é um losango do mesmo material, com borda só nos dois lados que aparecem */
+    .ap-guia-bico {
+      position: absolute; width: 11px; height: 11px; background: #fff;
+      transform: rotate(45deg); left: var(--ap-bico, 50%); margin-left: -5.5px;
+    }
+    .ap-guia-acima  .ap-guia-bico { bottom: -6px; border-right: 1px solid #efe7e0; border-bottom: 1px solid #efe7e0 }
+    .ap-guia-abaixo .ap-guia-bico { top: -6px; border-left: 1px solid #efe7e0; border-top: 1px solid #efe7e0 }
+
+    .ap-guia-vendo .ap-guia-foco { opacity: 1 }
+    .ap-guia-vendo .ap-guia-cartao { opacity: 1; transform: none }
+
+    @media (prefers-reduced-motion: reduce) {
+      .ap-guia-foco { animation: none; box-shadow: 0 0 0 4px rgba(234,88,12,.10) }
+      .ap-guia-seta { animation: none }
+      .ap-guia-foco, .ap-guia-cartao { transition: none }
+    }
   `;
   document.head.appendChild(style);
 })();

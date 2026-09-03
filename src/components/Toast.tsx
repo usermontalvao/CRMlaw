@@ -188,11 +188,27 @@ export const ToastContainer: React.FC<ToastContainerProps> = ({ toasts, onDismis
         aria-atomic="false"
         className={`pointer-events-none fixed inset-x-0 bottom-11 ${zc.NOTICE} flex justify-center px-3`}
       >
-        <div className="flex max-w-full flex-col items-center">
-          {toasts.map((toast) => (
-            <ToastItem key={toast.id} toast={toast} onDismiss={onDismiss} />
-          ))}
-        </div>
+        {/*
+          A COLUNA SÓ EXISTE QUANDO HÁ AVISO.
+
+          Vazia, ela continuava sendo pintada: alguma regra global de cartão
+          casava com `max-w-full` (o mesmo casamento por SUBSTRING de classe
+          descrito no bloco "MODAIS - CORREÇÃO GLOBAL" do index.css) e dava a
+          ela fundo branco, borda e sombra. Sem conteúdo, isso virava uma caixa
+          de 2×2 px branca, fixa no centro exato da tela, em z-index 130 — ou
+          seja, POR CIMA de tudo, inclusive do botão "Assinar documento" da
+          página pública, onde aparecia como um pontinho no meio da frase.
+
+          Ninguém achava porque o elemento é `pointer-events: none`: ele não
+          aparece em elementFromPoint e o inspetor não o pega no clique.
+        */}
+        {toasts.length > 0 && (
+          <div className="flex max-w-full flex-col items-center">
+            {toasts.map((toast) => (
+              <ToastItem key={toast.id} toast={toast} onDismiss={onDismiss} />
+            ))}
+          </div>
+        )}
       </div>
     </>
   );

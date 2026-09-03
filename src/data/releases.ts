@@ -37,6 +37,53 @@ export type ReleaseNote = {
 
 export const releases: ReleaseNote[] = [
   {
+    version: '1.22.3',
+    date: '02/09/2026',
+    summary: 'A página pública de assinatura ganhou um guia que aponta a próxima coisa a tocar, o documento ficou legível no computador e sair no meio do envio passou a pedir confirmação.',
+    modules: [
+      {
+        moduleId: 'assinatura-publica',
+        changes: [
+          {
+            type: 'feature' as const,
+            title: 'Um guia aponta a próxima coisa a tocar',
+            description: 'Quem assina está quase sempre no celular e quase nunca assinou um contrato pelo telefone. Agora, quando a pessoa hesita numa tela, aparece um cartão apontando exatamente o próximo passo — o campo do nome, o quadro da assinatura, o botão de ligar a câmera — e ele anda sozinho conforme cada item é cumprido. Some no primeiro toque: quem já sabe o caminho não vê guia nenhum.',
+          },
+          {
+            type: 'improvement' as const,
+            title: 'O documento deixa de esticar de ponta a ponta no computador',
+            description: 'Num monitor largo, a página do contrato era esticada até as bordas e a linha de texto atravessava a tela inteira; no caso do Word, ao contrário, a folha ficava minúscula no meio do cinza. Agora a folha vira uma coluna de leitura centrada, com sombra e margem, do tamanho de uma folha de papel. No celular nada muda.',
+          },
+          {
+            type: 'improvement' as const,
+            title: 'Fechar a página durante o envio agora pede confirmação',
+            description: 'Entre o toque em "Assinar documento" e a resposta do servidor existe um trecho que não pode ser interrompido. A tela de espera foi refeita (progresso circular, o que está acontecendo em cada fase) e o navegador passa a pedir confirmação para quem tentar fechar, recarregar ou sair do endereço. A trava sai no instante em que o envio termina ou falha.',
+          },
+          {
+            type: 'improvement' as const,
+            title: 'A tela de identificação virou uma coluna só',
+            description: 'O botão do Google não aceita passar de 400 px de largura — era por isso que ele nunca alinhava com os cartões de baixo. Em vez de emoldurá-lo, a etapa inteira passou a viver numa coluna de 400: título, botão do Google, métodos por código e o link de ajuda começam e terminam na mesma linha, com "Recomendado · sem esperar código" acima e um picote "ou receba um código" separando os dois caminhos.',
+          },
+          {
+            type: 'improvement' as const,
+            title: 'A foto não sai mais sozinha',
+            description: 'A contagem regressiva que disparava a selfie automaticamente foi removida por decisão do escritório: ela tirava da pessoa a escolha da hora da própria foto e apressava justamente quem estava com dificuldade de se enquadrar. Quem dispara agora é o dedo, no botão que já existia — liberado assim que o detector vê um rosto.',
+          },
+        ],
+      },
+      {
+        moduleId: 'sistema',
+        changes: [
+          {
+            type: 'fix' as const,
+            title: 'Um ponto branco fixo no centro da tela, por cima de tudo',
+            description: 'A área que abriga os avisos continuava sendo desenhada mesmo sem nenhum aviso: uma regra global de cartão pintava fundo, borda e sombra nela, e sem conteúdo isso virava uma caixinha branca de 2 px presa no centro exato da tela, acima de qualquer outra coisa — na página pública ela aparecia como um pontinho no meio do botão de assinar. Ninguém achava porque o elemento é invisível ao clique. Agora a área só existe quando há aviso.',
+          },
+        ],
+      },
+    ],
+  },
+  {
     version: '1.22.2',
     date: '02/09/2026',
     summary: 'Fechado um desvio que contornava a proteção do dia anterior, e a página pública passou a mostrar menos dado pessoal.',

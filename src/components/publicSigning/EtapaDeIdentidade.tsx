@@ -60,10 +60,13 @@ export const MetodoDeIdentidade: React.FC<{
   icone: React.ReactNode;
   enviando?: boolean;
   ordem?: number;
+  /** Marca do guia — ver `Guia.tsx`. */
+  guia?: string;
   onClick: () => void;
-}> = ({ nome, contato, icone, enviando, ordem = 0, onClick }) => (
+}> = ({ nome, contato, icone, enviando, ordem = 0, guia, onClick }) => (
   <button
     type="button"
+    data-guia={guia}
     onClick={onClick}
     className="flex w-full items-center gap-3 rounded-xl border bg-white px-3.5 py-3 text-left transition-colors hover:bg-slate-50"
     style={{ borderColor: '#e7e5e4', minHeight: 58, ...sobe(ordem) }}
@@ -143,7 +146,17 @@ const EtapaDeIdentidade: React.FC<{
   }
 
   return (
-    <div>
+    /*
+      A COLUNA DE 400 PX.
+
+      400 é o teto de largura que a biblioteca do Google aceita para o botão
+      dela — não dá para esticar, e é por isso que ele nunca alinhava com os
+      cartões de baixo, que iam até a borda do modal. Em vez de emoldurar o
+      widget (um botão dentro de um botão, que foi o que ficou feio), a etapa
+      inteira passa a viver numa coluna de 400: título, frase, botão do Google,
+      cartões e o link de ajuda começam e terminam todos na mesma linha.
+    */
+    <div className="mx-auto w-full max-w-[400px]">
       {cabecalho}
 
       {googleErro && (
@@ -161,21 +174,55 @@ const EtapaDeIdentidade: React.FC<{
         )}
 
         <div className={googleCarregando ? 'pointer-events-none opacity-70' : ''}>
-          {/* O widget do Google é o único elemento da tela que não aceita CSS.
-              Fica isolado no topo e SEM rótulo próprio ("Mais rápido", picote
-              "ou"): ele já se anuncia sozinho, e as duas divisórias antigas
-              existiam só para explicar a diferença de aparência. */}
+          {/*
+            O BOTÃO DO GOOGLE.
+
+            Ele é o único elemento desta tela que não aceita CSS: raio, altura e
+            tipografia são da biblioteca, e a largura só vai até 400 px. Tentei
+            antes emoldurá-lo num cartão branco do tamanho dos outros métodos —
+            virou botão dentro de botão, com duas bordas concêntricas e uma
+            tarja pendurada na quina. Pior do que o problema.
+
+            Agora ele é uma linha como as outras, na largura da coluna, e o
+            "recomendado" virou TIPOGRAFIA: o mesmo rótulo miúdo, em caixa-alta
+            e espaçado, do picote logo abaixo. Duas etiquetas da mesma família
+            conversando entre si, sem nenhuma peça flutuando por cima de borda
+            nenhuma.
+          */}
           {metodos.google && (
-            <div ref={refBotaoGoogle} className="flex justify-center pb-1" style={sobe(1)} />
+            <div style={sobe(1)}>
+              <div className="flex items-center gap-2 pb-2">
+                <span className="text-[9.5px] font-bold uppercase tracking-[0.16em]" style={{ color: '#ea580c' }}>
+                  Recomendado
+                </span>
+                <span className="text-[11px]" style={{ color: TINTA_3 }}>
+                  · sem esperar código
+                </span>
+              </div>
+              <div data-guia="google" ref={refBotaoGoogle} className="min-h-[44px]" />
+            </div>
           )}
 
-          <div className="flex flex-col gap-2" style={{ marginTop: metodos.google ? 14 : 0 }}>
+          {/* O picote existe de novo — mas agora ele separa DUAS COISAS
+              diferentes: entrar pela conta, ou receber um código. */}
+          {metodos.google && (metodos.whatsapp || metodos.email || metodos.phone) && (
+            <div className="flex items-center gap-3 py-4" style={sobe(2)}>
+              <span className="h-px flex-1" style={{ background: '#ede9e6' }} />
+              <span className="text-[9.5px] font-bold uppercase tracking-[0.16em]" style={{ color: TINTA_3 }}>
+                ou receba um código
+              </span>
+              <span className="h-px flex-1" style={{ background: '#ede9e6' }} />
+            </div>
+          )}
+
+          <div className="flex flex-col gap-2">
             {metodos.whatsapp && (
               <MetodoDeIdentidade
                 ordem={2}
                 nome="WhatsApp"
                 contato={telefoneMascarado}
                 enviando={enviando === 'whatsapp'}
+                guia="metodo-whatsapp"
                 icone={ICONE_WHATSAPP}
                 onClick={() => onEscolher('whatsapp')}
               />
@@ -187,6 +234,7 @@ const EtapaDeIdentidade: React.FC<{
                 nome="E-mail"
                 contato={emailMascarado}
                 enviando={enviando === 'email'}
+                guia="metodo-email"
                 icone={<Mail width={19} height={19} color="#4F5A69" strokeWidth={1.7} />}
                 onClick={() => onEscolher('email')}
               />
@@ -198,6 +246,7 @@ const EtapaDeIdentidade: React.FC<{
                 nome="SMS"
                 contato={telefoneMascarado}
                 enviando={enviando === 'sms'}
+                guia="metodo-sms"
                 icone={ICONE_SMS}
                 onClick={() => onEscolher('sms')}
               />
