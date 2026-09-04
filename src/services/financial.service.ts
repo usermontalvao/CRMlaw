@@ -1,6 +1,7 @@
 import { supabase } from '../config/supabase';
 import { syncBus } from '../lib/syncBus';
 import { buildInstallmentSchedule } from '../utils/installmentSchedule';
+import { deriveAgreementStatus } from '../utils/agreementStatus';
 import type {
   Agreement,
   AgreementStatus,
@@ -159,6 +160,19 @@ class FinancialService {
       await supabase.from('installments').delete().eq('agreement_id', id);
       await this.generateInstallments(id, nextInstallmentsCount, installmentValue, firstDueDate, customInstallments);
     }
+
+    // O status concluído é derivado das parcelas. Isso impede que uma
+    // edição comum reative acidentalmente um lançamento já quitado.
+    const { data: statusInstallments, error: statusInstallmentsError } = await supabase
+      .from('installments')
+      .select('status')
+      .eq('agreement_id', id);
+
+    if (statusInstallmentsError) throw statusInstallmentsError;
+    updateData.status = deriveAgreementStatus(
+      (updateData.status ?? current.status) as AgreementStatus,
+      statusInstallments ?? [],
+    );
 
     const { data: updated, error } = await supabase
       .from('agreements')
@@ -697,24 +711,33 @@ class FinancialService {
   }
 
   private async checkAndUpdateAgreementStatus(agreementId: string): Promise<void> {
-    const { data: agreement } = await supabase
+    const { data: agreement, error: agreementError } = await supabase
       .from('agreements')
       .select('status')
       .eq('id', agreementId)
       .single();
+
+    if (agreementError) throw agreementError;
 
     if (agreement && !isOperationalAgreementStatus(agreement.status)) {
       return;
     }
 
     const installments = await this.listInstallments(agreementId);
-    
-    const allPaid = installments.every(i => i.status === 'pago');
-    if (allPaid) {
-      await supabase
+
+    const nextStatus = deriveAgreementStatus(agreement.status as AgreementStatus, installments);
+    if (nextStatus === 'concluido' && agreement.status !== 'concluido') {
+      const { data: updated, error } = await supabase
         .from('agreements')
         .update({ status: 'concluido', updated_at: new Date().toISOString() })
-        .eq('id', agreementId);
+        .eq('id', agreementId)
+        .select('id')
+        .maybeSingle();
+
+      if (error) throw error;
+      if (!updated) {
+        throw new Error('O lançamento foi quitado, mas o status não pôde ser atualizado.');
+      }
     }
   }
 

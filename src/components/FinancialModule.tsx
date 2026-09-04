@@ -1356,8 +1356,16 @@ const FinancialModule: React.FC<FinancialModuleProps> = ({ entityId, mode, insta
       );
       toast.success('Quitação realizada', `${pending.length} parcela${pending.length > 1 ? 's' : ''} quitada${pending.length > 1 ? 's' : ''} com sucesso`);
       setIsBulkPaymentOpen(false);
-      const updatedInstallments = await financialService.listInstallments(selectedAgreement.id);
+      const [updatedInstallments, updatedAgreement] = await Promise.all([
+        financialService.listInstallments(selectedAgreement.id),
+        financialService.getAgreement(selectedAgreement.id),
+      ]);
       setInstallments(updatedInstallments);
+      setSelectedAgreement(updatedAgreement);
+      setAgreements((prev) => prev.map((item) => (
+        item.id === updatedAgreement.id ? updatedAgreement : item
+      )));
+      await loadData(activeMonth);
     } catch (err: any) {
       toast.error('Erro', err.message || 'Falha ao quitar parcelas');
     } finally {
@@ -3923,7 +3931,8 @@ body{font-family:'Inter',system-ui,sans-serif;background:#e8e8e8;color:#1a1a1a;-
                           ref={editStatusSelectRef}
                           value={editForm.status}
                           onChange={(e) => handleEditChange('status', e.target.value)}
-                          className="w-full rounded-lg text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-emerald-500/30 focus:border-emerald-400 border border-[#e7e5df] dark:border-zinc-700 bg-[#f8f7f5] dark:bg-zinc-800 h-11 px-4 text-sm transition appearance-none"
+                          disabled={editForm.status === 'concluido' || editForm.status === 'cancelado'}
+                          className="w-full rounded-lg text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-emerald-500/30 focus:border-emerald-400 border border-[#e7e5df] dark:border-zinc-700 bg-[#f8f7f5] dark:bg-zinc-800 h-11 px-4 text-sm transition appearance-none disabled:cursor-not-allowed disabled:opacity-70"
                         >
                           <option value="ativo">Ativo</option>
                           <option value="aguardando_definicao">Aguardando definição</option>
