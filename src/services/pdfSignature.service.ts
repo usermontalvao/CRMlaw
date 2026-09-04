@@ -2,6 +2,7 @@
 import { getLogoBytes } from '../utils/logoBase64';
 import { degrees } from 'pdf-lib';
 import QRCode from 'qrcode';
+import { cronometroDaAssinatura } from '@/utils/cronometroDeFases';
 import { BRAND_SERIF, BRAND_DOT, BRAND_WORDMARK } from '../constants/brand';
 import { seloImpressaoCurta } from '../constants/selo';
 import html2canvas from 'html2canvas';
@@ -150,6 +151,13 @@ class PdfSignatureService {
    * token-scoped; no interno (ou fallback enquanto anon aberto) direto.
    */
   private async persistSignedPdf(filePath: string, pdfBytes: Uint8Array, errorLabel: string): Promise<void> {
+    const fecharFase = cronometroDaAssinatura.fase('upload do PDF assinado');
+    try {
+      await this.persistSignedPdfInterno(filePath, pdfBytes, errorLabel);
+    } finally { fecharFase(); }
+  }
+
+  private async persistSignedPdfInterno(filePath: string, pdfBytes: Uint8Array, errorLabel: string): Promise<void> {
     if (this.publicUploadResolver) {
       const ok = await this.publicUploadResolver({ path: filePath, bytes: pdfBytes, contentType: 'application/pdf' });
       if (ok) {
@@ -410,6 +418,16 @@ class PdfSignatureService {
       console.log('[PDF] loadStorageImage: path vazio');
       return null;
     }
+    // Uma fase por CHAMADA, de propósito: o relatório conta as passagens, e é a
+    // contagem que denuncia a mesma imagem sendo baixada uma vez por documento.
+    const fecharFase = cronometroDaAssinatura.fase(
+      removeWhiteBg ? 'imagem: rubrica (baixar+recortar)' : 'imagem: selfie (baixar+embutir)');
+    try {
+      return await this.loadStorageImageInterno(pdfDoc, path, removeWhiteBg);
+    } finally { fecharFase(); }
+  }
+
+  private async loadStorageImageInterno(pdfDoc: PDFDocument, path: string, removeWhiteBg = false): Promise<EmbeddedImage | null> {
     console.log('[PDF] loadStorageImage: tentando carregar', path);
     
     // Fluxo PÚBLICO: resolve via edge token-scoped (não acessa o bucket como anon).
@@ -1165,7 +1183,15 @@ class PdfSignatureService {
     }
   }
 
-  private async addReportPages(params: {
+  private async addReportPages(params: Parameters<typeof PdfSignatureService.prototype.addReportPagesInterno>[0]): Promise<void> {
+    // O laudo é pdf-lib puro (capa, ficha do signatário, trilha). Vale medir
+    // separado da rasterização: são motores diferentes, e só um deles some com
+    // a montagem no servidor.
+    await cronometroDaAssinatura.medir('desenhar o laudo (pdf-lib)',
+      () => this.addReportPagesInterno(params));
+  }
+
+  private async addReportPagesInterno(params: {
     pdfDoc: PDFDocument;
     request: SignatureRequest;
     signer: Signer;
@@ -3522,7 +3548,11 @@ class PdfSignatureService {
     // O docx-preview pode gerar páginas como <section> ou <article> dependendo do documento.
     // No consolidado o container principal é 'main'; no per_document é o arquivo em escopo
     // (principal OU um anexo), para que campos manuais e placeholders casem por document_id.
-    await convertDocxContainer({ container: docxContainer, documentId: scopeDocumentId });
+    // A HIPÓTESE PRINCIPAL do gargalo: é aqui que o `html2canvas` desenha o DOCX
+    // a 2,5× e fatia em páginas. Se esta fase dominar o relatório, cache de
+    // imagem é consolo — só tirar o desenho do navegador resolve.
+    await cronometroDaAssinatura.medir('rasterizar o DOCX (html2canvas)',
+      () => convertDocxContainer({ container: docxContainer, documentId: scopeDocumentId }));
 
     // Fallback: só adicionar assinatura automática se realmente não houver campos para
     // o documento em escopo (nem manual, nem placeholder aplicável).

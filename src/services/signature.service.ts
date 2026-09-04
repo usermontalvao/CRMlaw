@@ -585,10 +585,59 @@ class SignatureService {
     // Registrar no audit log
     await this.addAuditLog(request.id, null, 'created', 'Solicitação de assinatura criada');
 
+    // ── CONGELAR A ORIGEM, PARA TODO ENVELOPE CRIADO PELO FRONT ──────────────
+    //
+    // AQUI, e não em cada tela, por um motivo aprendido na marra em 04/09/2026:
+    // o congelamento foi enganchado no `template-fill` e no assistente, e ficou
+    // faltando o módulo Documentos — que é justamente por onde os kits saem. O
+    // sintoma era `sem_original_congelado` em todo teste, sem erro nenhum, e
+    // custou três rodadas até a consulta mostrar que aqueles envelopes não
+    // vinham do link de preenchimento.
+    //
+    // `createRequest` é o gargalo por onde TODA criação do front passa
+    // (Documentos, assistente de Assinaturas e o que vier depois). Enganchar
+    // por tela é garantia de esquecer uma.
+    //
+    // FALHA MACIA: sem congelamento o envelope funciona como sempre funcionou —
+    // a montagem cai no navegador. Derrubar a criação porque o conversor está
+    // fora do ar trocaria "vai demorar mais" por "o cliente não recebeu nada".
+    //
+    // IDEMPOTENTE: a função pula documento que já tem linha congelada, então
+    // chamar de novo (ou depois do congelamento do assistente) não refaz nada.
+    void this.congelarOrigemNoServidor(request.id);
+
     return {
       ...request,
       signers: createdSigners ?? [],
     };
+  }
+
+  /**
+   * Pede ao servidor que congele a origem do envelope.
+   *
+   * NÃO é esperado (`void` no chamador): o congelamento converte `.docx` em PDF
+   * no `docs.jurius-api.com`, o que leva segundos por arquivo. Fazer quem cria o
+   * envelope esperar por isso atrasaria a tela sem necessidade — o link de
+   * assinatura já pode ser enviado, e o congelamento termina sozinho antes de
+   * alguém abrir.
+   *
+   * Nunca estoura: o `catch` existe para que uma falha aqui não derrube a
+   * criação do envelope, que já aconteceu e é o que importa.
+   */
+  private async congelarOrigemNoServidor(requestId: string): Promise<void> {
+    try {
+      const { data, error } = await supabase.functions.invoke('congelar-docx-no-servidor', {
+        body: { request_id: requestId },
+      });
+      if (error || !data?.success) {
+        console.warn('[congelamento] não concluiu:', error?.message ?? data?.error ?? '(sem detalhe)');
+        return;
+      }
+      console.log('[congelamento] origem congelada no servidor:',
+        JSON.stringify(data.resultados), 'âncoras:', data.ancoras_localizadas ?? 0);
+    } catch (e) {
+      console.warn('[congelamento] falhou:', e);
+    }
   }
 
   async updateRequest(
@@ -1174,6 +1223,88 @@ class SignatureService {
     }
   }
 
+  /**
+   * A MONTAGEM NO SERVIDOR — o caminho novo (ver
+   * `docs/assinatura-montagem-no-servidor.md`).
+   *
+   * Uma chamada faz TUDO: a Edge Function lê o PDF congelado, desenha as
+   * rubricas, o rodapé e o laudo, calcula o SHA-256 sobre os bytes que ela
+   * mesma produziu, grava no bucket e chama a mesma RPC de sempre. O navegador
+   * não manda bytes, nem hash, nem código de verificação, nem o caminho de
+   * destino — mandar qualquer um desses devolveria, por outra porta, o poder
+   * que esta migração existe para tirar dele.
+   *
+   * O RETORNO TEM TRÊS ESTADOS, e confundi-los é o que faria o interruptor
+   * mentir:
+   *
+   *   · `montou`   — o artefato existe e está registrado. Nada mais a fazer;
+   *   · `recusou`  — o servidor entendeu o pedido e disse que NÃO monta este
+   *                  documento (ainda não foi congelado, ou a origem não é
+   *                  PDF). É o caso normal enquanto a etapa 1 não alcança todos
+   *                  os caminhos, e a resposta certa é montar no navegador;
+   *   · `falhou`   — erro de rede, função fora do ar, 500. Também cai para o
+   *                  navegador, mas MERECE log de aviso: recusa é esperada,
+   *                  falha não é.
+   *
+   * Nunca estoura. Uma exceção aqui derrubaria a assinatura de quem está com o
+   * dedo na tela por causa de um caminho que ainda é opcional.
+   */
+  async montarDocumentoAssinadoNoServidor(
+    token: string,
+    documentKey: string,
+  ): Promise<
+    | {
+        estado: 'montou';
+        signed_file_path: string;
+        verification_code: string;
+        signed_pdf_sha256: string | null;
+        document_hash: string | null;
+        page_count: number | null;
+        ja_montado: boolean;
+      }
+    | { estado: 'recusou'; codigo: string; motivo: string }
+    | { estado: 'falhou'; motivo: string }
+  > {
+    if (!token || !documentKey) return { estado: 'falhou', motivo: 'token ou documento ausente' };
+
+    try {
+      const { data, error } = await supabase.functions.invoke('montar-documento-assinado', {
+        body: { token, document_key: documentKey },
+      });
+
+      if (error) {
+        // A recusa desenhada (409 com `codigo`) chega como erro do invoke, com o
+        // corpo dentro de `context`. Ler o corpo é o que separa "ainda não dá
+        // para montar aqui" de "a função está quebrada" — e sem essa separação
+        // um deploy parcial passaria por comportamento normal.
+        const corpo = await this.extractEdgeErrorBody(error);
+        const codigo = String(corpo?.codigo ?? '').trim();
+        if (codigo) {
+          return { estado: 'recusou', codigo, motivo: String(corpo?.error ?? codigo) };
+        }
+        return { estado: 'falhou', motivo: String(corpo?.error ?? error.message ?? 'erro desconhecido') };
+      }
+
+      if (data?.success && data?.signed_file_path) {
+        return {
+          estado: 'montou',
+          signed_file_path: String(data.signed_file_path),
+          verification_code: String(data.verification_code ?? ''),
+          signed_pdf_sha256: data.signed_pdf_sha256 ?? null,
+          document_hash: data.document_hash ?? null,
+          page_count: typeof data.page_count === 'number' ? data.page_count : null,
+          ja_montado: !!data.ja_montado,
+        };
+      }
+
+      const codigo = String(data?.codigo ?? '').trim();
+      if (codigo) return { estado: 'recusou', codigo, motivo: String(data?.error ?? codigo) };
+      return { estado: 'falhou', motivo: String(data?.error ?? 'resposta sem documento') };
+    } catch (e) {
+      return { estado: 'falhou', motivo: e instanceof Error ? e.message : String(e) };
+    }
+  }
+
   /** Fluxo PÚBLICO: lista os documentos assinados individuais do envelope (por token). */
   async getPublicRequestDocuments(token: string): Promise<SignatureRequestDocument[]> {
     if (!token) return [];
@@ -1183,6 +1314,68 @@ class SignatureService {
       return [];
     }
     return (data ?? []) as SignatureRequestDocument[];
+  }
+
+  /** Estado token-scoped da montagem durável iniciada no ato da assinatura. */
+  async getAssemblyStatusPublic(publicToken: string): Promise<{
+    status: string;
+    stage: string | null;
+    expected: number;
+    completed: number;
+    attempts: number;
+    finished: boolean;
+    failed: boolean;
+    error: string | null;
+  } | null> {
+    if (!publicToken) return null;
+    const { data, error } = await supabase.rpc('public_signature_assembly_status', {
+      p_token: publicToken,
+    });
+    if (error || !data) return null;
+    const row = data as any;
+    return {
+      status: String(row.job_status ?? 'none'),
+      stage: row.stage ?? null,
+      expected: Number(row.expected ?? 0),
+      completed: Number(row.completed ?? 0),
+      attempts: Number(row.attempts ?? 0),
+      finished: row.finished === true,
+      failed: row.failed === true,
+      error: row.error ?? null,
+    };
+  }
+
+  /**
+   * A página acompanha apenas para oferecer o arquivo imediatamente quando ele
+   * já ficou pronto. Timeout não é falha: o job permanece no servidor e pode
+   * ser retomado pelo cron depois que a janela for fechada.
+   */
+  async waitForAssemblyPublic(
+    publicToken: string,
+    opts?: { timeoutMs?: number; intervalMs?: number },
+  ): Promise<{
+    status: string;
+    finished: boolean;
+    failed: boolean;
+    error: string | null;
+  }> {
+    const deadline = Date.now() + (opts?.timeoutMs ?? 20_000);
+    const intervalMs = opts?.intervalMs ?? 1_500;
+    let last = { status: 'none', finished: false, failed: false, error: null as string | null };
+    while (Date.now() < deadline) {
+      const current = await this.getAssemblyStatusPublic(publicToken);
+      if (current) {
+        last = {
+          status: current.status,
+          finished: current.finished,
+          failed: current.failed,
+          error: current.error,
+        };
+        if (current.finished || current.failed) return last;
+      }
+      await new Promise((resolve) => setTimeout(resolve, intervalMs));
+    }
+    return last;
   }
 
   /**
@@ -1347,6 +1540,74 @@ class SignatureService {
   }
 
   /**
+   * CONGELAR O ORIGINAL: manda o servidor reler cada arquivo do envelope no
+   * Storage e apurar ELE MESMO o SHA-256 e o formato.
+   *
+   * A impressão digital do arquivo de ORIGEM — a que o dossiê exibe como
+   * `source_document_sha256` e que a defesa cita — vinha do navegador. O
+   * servidor tinha o arquivo desde sempre; nunca tinha sido ele a olhar.
+   *
+   * Note o que NÃO vai no corpo: os caminhos. Quem diz quais arquivos conferir
+   * é `signature_requests`, lido dentro da função. Só a proveniência (de qual
+   * `.docx` o PDF nasceu, com qual motor) é declarada daqui, e ela não atesta
+   * nada — é para quem for auditar entender o histórico.
+   *
+   * FALHA MACIA: o envelope já existe e é válido sem isto. Quem chama recebe o
+   * parecer e decide o que mostrar; um congelamento que não aconteceu pode ser
+   * repetido depois, porque a função é idempotente.
+   *
+   * Ver `docs/assinatura-montagem-no-servidor.md`.
+   */
+  async congelarOriginalNoServidor(
+    requestId: string,
+    provenance?: Record<string, unknown>,
+  ): Promise<{
+    parecer: 'INTEGRO' | 'INCONCLUSIVO' | 'NAO_INTEGRO' | 'FALHOU';
+    congelados: number;
+    ausentes: number;
+    naoPdf: number;
+    erro?: string;
+  }> {
+    try {
+      const { data, error } = await supabase.functions.invoke('signature-freeze-source', {
+        body: { request_id: requestId, provenance: provenance ?? {} },
+      });
+      if (error) {
+        const serverMessage = await this.extractEdgeErrorMessage(error);
+        return { parecer: 'FALHOU', congelados: 0, ausentes: 0, naoPdf: 0, erro: serverMessage || error.message };
+      }
+      return {
+        parecer: (data?.parecer ?? 'FALHOU') as 'INTEGRO' | 'INCONCLUSIVO' | 'NAO_INTEGRO' | 'FALHOU',
+        congelados: Number(data?.congelados ?? 0),
+        ausentes: Number(data?.ausentes ?? 0),
+        naoPdf: Number(data?.nao_pdf ?? 0),
+        erro: data?.error ?? undefined,
+      };
+    } catch (e: any) {
+      return { parecer: 'FALHOU', congelados: 0, ausentes: 0, naoPdf: 0, erro: e?.message ?? 'Erro desconhecido' };
+    }
+  }
+
+  /** O que o servidor apurou sobre os arquivos de origem congelados do envelope. */
+  async listarOriginaisCongelados(requestId: string): Promise<Array<{
+    document_key: string; file_path: string; sha256: string | null; byte_size: number | null;
+    is_pdf: boolean | null; frozen_at: string | null; original_name: string | null;
+    converted_from: string | null; conversion_engine: string | null; display_name: string | null;
+  }>> {
+    if (!requestId) return [];
+    const { data, error } = await supabase
+      .from('signature_source_files')
+      .select('document_key, file_path, sha256, byte_size, is_pdf, frozen_at, original_name, converted_from, conversion_engine, display_name')
+      .eq('signature_request_id', requestId)
+      .order('sort_order', { ascending: true });
+    if (error) {
+      console.warn('[congelamento] Falha ao listar originais congelados:', error);
+      return [];
+    }
+    return (data ?? []) as any;
+  }
+
+  /**
    * FASE 1 (server-side): aciona o orquestrador `finalize-signature-envelope`, que
    * relê os PDFs do Storage, RECALCULA o SHA-256 no servidor (A1), detecta
    * sobrescrita (A4) e é a ÚNICA autoridade que flipa o envelope e dispara e-mail.
@@ -1508,6 +1769,13 @@ class SignatureService {
   /**
    * O corpo do erro por inteiro — a mensagem sozinha não basta quando a
    * resposta traz "e faltam N segundos" (a escada de espera entre códigos).
+   *
+   * O outro uso é a `montar-documento-assinado`, que responde 409 com um
+   * `codigo` (`sem_original_congelado`, `original_nao_e_pdf`). É esse campo que
+   * separa "este documento ainda não pode ser montado no servidor" — situação
+   * normal, cai para o navegador em silêncio — de "a função está quebrada", que
+   * precisa de aviso. Casar a frase em vez do campo prenderia a decisão à
+   * redação da mensagem.
    */
   private async extractEdgeErrorBody(error: any): Promise<any | null> {
     try {

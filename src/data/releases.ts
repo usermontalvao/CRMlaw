@@ -37,6 +37,33 @@ export type ReleaseNote = {
 
 export const releases: ReleaseNote[] = [
   {
+    version: '1.22.19',
+    date: '04/09/2026',
+    summary: 'A montagem dos documentos assinados sai do celular e continua no servidor mesmo depois que a página é fechada.',
+    modules: [
+      {
+        moduleId: 'assinaturas',
+        changes: [
+          {
+            type: 'fix' as const,
+            title: 'A assinatura não fica mais presa à janela aberta',
+            description: 'Cada assinatura cria, no mesmo instante, um trabalho durável no servidor. Ele congela os originais que estiverem faltando, monta os arquivos do kit em paralelo e finaliza o envelope. Se uma execução cair, o servidor retoma sozinho; fechar o navegador não interrompe o trabalho.',
+          },
+          {
+            type: 'security' as const,
+            title: 'Original, rubrica e hash passam pela mesma autoridade',
+            description: 'O PDF congelado é relido no servidor, a posição do marcador fica vinculada à paginação desse PDF e o hash final é calculado sobre os bytes produzidos ali. O navegador deixa de escolher o arquivo final, o código de verificação e a impressão digital que serão registrados.',
+          },
+          {
+            type: 'improvement' as const,
+            title: 'Kits deixam de pagar o tempo documento por documento',
+            description: 'Os arquivos independentes do kit são montados em paralelo. A página acompanha por alguns segundos para mostrar o resultado imediato, mas pode ser fechada enquanto o servidor termina.',
+          },
+        ],
+      },
+    ],
+  },
+  {
     version: '1.22.18',
     date: '03/09/2026',
     summary: 'O painel da assinatura para de dizer "0%" e passa a contar até onde a pessoa chegou — e a cobrança automática deixa de ser muda.',

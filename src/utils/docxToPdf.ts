@@ -50,6 +50,11 @@ import {
   type TextLayerRun,
 } from './pdfTextLayer';
 import { syncfusionDocxToPdf, syncfusionEngineUnavailableReason } from './syncfusionDocxToPdf';
+import {
+  acharMarcadores,
+  campoEmPorcentagem,
+  mascaraPara,
+} from './marcadoresDeAssinatura';
 
 /** Classe do contêiner invisível de renderização (usada também no CSS injetado). */
 const RENDER_CLASS = 'docx-to-pdf-render';
@@ -85,6 +90,29 @@ export type DocxToPdfOptions = {
   accessToken?: string | null;
   /** Camada de texto invisível (PDF pesquisável). Ligada por padrão. */
   textLayer?: boolean;
+  /**
+   * Detectar `[[ASSINATURA]]` e OCULTAR o marcador antes de rasterizar.
+   *
+   * Desligado por padrão: só o congelamento de envelope precisa disso. Ligado,
+   * `marcadores` volta preenchido no resultado e o texto do marcador não é
+   * impresso na folha.
+   *
+   * Só vale no motor `preview` — é ele que tem DOM para medir. Com o
+   * Syncfusion não há onde procurar, e `marcadores` volta vazio.
+   */
+  detectarMarcadores?: boolean;
+};
+
+/** Um `[[ASSINATURA]]` achado na folha, já em coordenadas de campo. */
+export type MarcadorDetectado = {
+  /** `[[ASSINATURA]]` é 1; `[[ASSINATURA_2]]` é 2. */
+  indiceDoAssinante: number;
+  /** Folha em que apareceu, contando de 1. */
+  pagina: number;
+  x_percent: number;
+  y_percent: number;
+  w_percent: number;
+  h_percent: number;
 };
 
 export type DocxToPdfResult = {
@@ -99,6 +127,11 @@ export type DocxToPdfResult = {
   searchable: boolean;
   /** Por que o motor preferido não foi usado (quando houve troca). */
   fallbackReason?: string;
+  /**
+   * Marcadores `[[ASSINATURA]]` achados, quando `detectarMarcadores` foi ligado.
+   * Vazio quando a opção está desligada OU quando o motor foi o Syncfusion.
+   */
+  marcadores: MarcadorDetectado[];
 };
 
 /** CSS mínimo: neutraliza a moldura de visualização do docx-preview sem tocar
@@ -273,11 +306,119 @@ function sheetGeometry(sheet: HTMLElement): PageGeometry {
  * É o motor de reserva: preserva tamanho de folha, orientação e margens, mas o
  * layout é o do visualizador HTML, não o do Word. Prefira `docxToPdf`.
  */
+/**
+ * Acha os `[[ASSINATURA]]` de UMA folha renderizada e oculta o texto deles.
+ *
+ * Esta é a metade que precisa de navegador; a regra está em
+ * `marcadoresDeAssinatura.ts`, testada à parte.
+ *
+ * DUAS PASSADAS, de propósito. Medir e mascarar no mesmo laço funcionaria hoje
+ * (a máscara tem o mesmo comprimento, então os offsets não andam), mas amarra
+ * a corretude a esse detalhe. Medindo tudo antes, trocar a máscara um dia não
+ * quebra a medição em silêncio.
+ */
+function detectarMarcadoresNaFolha(
+  folha: HTMLElement,
+  pagina: number,
+): MarcadorDetectado[] {
+  const base = folha.getBoundingClientRect();
+  if (!(base.width > 0) || !(base.height > 0)) return [];
+
+  // Texto contínuo: o Word parte `[[ASSINATURA]]` em vários `runs`, e quem
+  // procura nó a nó não acha nada num documento perfeitamente válido.
+  const nos: Text[] = [];
+  const inicios: number[] = [];
+  let texto = '';
+  const walker = document.createTreeWalker(folha, NodeFilter.SHOW_TEXT, null);
+  let no: Text | null;
+  while ((no = walker.nextNode() as Text | null)) {
+    nos.push(no);
+    inicios.push(texto.length);
+    texto += no.textContent ?? '';
+  }
+
+  const marcadores = acharMarcadores(texto);
+  if (marcadores.length === 0) return [];
+
+  const localizar = (abs: number): { no: Text; offset: number } | null => {
+    for (let i = nos.length - 1; i >= 0; i -= 1) {
+      const inicio = inicios[i];
+      const tam = (nos[i].textContent ?? '').length;
+      if (abs >= inicio && abs <= inicio + tam) {
+        return { no: nos[i], offset: Math.max(0, Math.min(tam, abs - inicio)) };
+      }
+    }
+    return null;
+  };
+
+  // ── Passada 1: medir ──
+  const achados: MarcadorDetectado[] = [];
+  for (const m of marcadores) {
+    const ini = localizar(m.inicio);
+    const fim = localizar(m.fim);
+    if (!ini || !fim) continue;
+
+    let rect: DOMRect | null = null;
+    try {
+      const range = document.createRange();
+      range.setStart(ini.no, ini.offset);
+      range.setEnd(fim.no, fim.offset);
+      rect = range.getBoundingClientRect();
+      range.detach?.();
+    } catch {
+      rect = null;
+    }
+
+    // Sem retângulo do trecho exato, vale o do elemento que o contém: uma
+    // posição aproximada na linha certa é muito melhor do que o fallback de
+    // rodapé, que joga a rubrica para o fim da página.
+    const alvo = rect ?? ini.no.parentElement?.getBoundingClientRect() ?? null;
+    if (!alvo) continue;
+
+    const campo = campoEmPorcentagem(
+      {
+        esquerda: alvo.left - base.left,
+        topo: alvo.top - base.top,
+        largura: alvo.width,
+        altura: alvo.height,
+      },
+      { largura: base.width, altura: base.height },
+    );
+    if (!campo) continue;
+
+    achados.push({ indiceDoAssinante: m.indiceDoAssinante, pagina, ...campo });
+  }
+
+  // ── Passada 2: ocultar ──
+  // Sem isto o texto `[[ASSINATURA]]` sai impresso no PDF congelado, e a
+  // assinatura acaba desenhada por cima dele.
+  for (const m of marcadores) {
+    const mascara = mascaraPara(m.bruto);
+    for (let i = 0; i < nos.length; i += 1) {
+      const inicio = inicios[i];
+      const conteudo = nos[i].textContent ?? '';
+      const fim = inicio + conteudo.length;
+      const de = Math.max(m.inicio, inicio);
+      const ate = Math.min(m.fim, fim);
+      if (ate <= de) continue;
+      nos[i].textContent =
+        conteudo.slice(0, de - inicio)
+        + mascara.slice(de - m.inicio, ate - m.inicio)
+        + conteudo.slice(ate - inicio);
+    }
+  }
+
+  return achados;
+}
+
 export async function previewDocxToPdf(
   docxBlob: Blob,
   options: DocxToPdfOptions = {},
 ): Promise<Omit<DocxToPdfResult, 'engine' | 'fallbackReason'>> {
-  const { scale: desiredScale = 2.5, onProgress, signal, textLayer = true } = options;
+  const {
+    scale: desiredScale = 2.5, onProgress, signal,
+    textLayer = true, detectarMarcadores = false,
+  } = options;
 
   const container = document.createElement('div');
   container.className = RENDER_CLASS;
@@ -328,6 +469,7 @@ export async function previewDocxToPdf(
     });
     let pageCount = 0;
     let textRunsWritten = 0;
+    const marcadores: MarcadorDetectado[] = [];
 
     for (let index = 0; index < sheets.length; index += 1) {
       if (signal?.aborted) throw new Error('Conversão cancelada.');
@@ -338,6 +480,20 @@ export async function previewDocxToPdf(
       const widthPx = sheet.scrollWidth || sheet.offsetWidth || 794;
       const heightPx = sheet.scrollHeight || sheet.offsetHeight || 1123;
       const rasterScale = resolveRasterScale({ widthPx, heightPx, desiredScale });
+
+      // ANTES de rasterizar E antes de medir a camada de texto: o marcador tem
+      // de sumir das duas coisas. Se saísse só da imagem, o PDF continuaria
+      // com "[[ASSINATURA]]" localizável pelo Ctrl+F — num documento que vale
+      // como prova, isso é conteúdo que ninguém escreveu.
+      if (detectarMarcadores) {
+        try {
+          marcadores.push(...detectarMarcadoresNaFolha(sheet, index + 1));
+        } catch (error) {
+          // Detectar é melhoria; falhar aqui não pode custar a conversão, que é
+          // o que o usuário pediu. Sem marcador, o fluxo cai no caminho de hoje.
+          console.warn('[docxToPdf] falha ao detectar marcadores na folha', index + 1, error);
+        }
+      }
 
       const canvas = await html2canvas(sheet, {
         scale: rasterScale,
@@ -405,6 +561,7 @@ export async function previewDocxToPdf(
       pageCount,
       sheetCount: sheets.length,
       searchable: textRunsWritten > 0,
+      marcadores,
     };
   } finally {
     style.remove();
@@ -437,7 +594,10 @@ export async function docxToPdf(
           accessToken: options.accessToken,
           textLayer: options.textLayer,
         });
-        return { blob, pageCount, sheetCount: pageCount, engine: 'syncfusion', searchable };
+        // O Syncfusion não renderiza em DOM, então não há onde procurar marcador.
+        // Quem precisa deles tem de pedir `engine: 'preview'` — e o congelamento
+        // já pede, pela armadilha da geometria (ver o diário da migração).
+        return { blob, pageCount, sheetCount: pageCount, engine: 'syncfusion', searchable, marcadores: [] };
       } catch (error) {
         if (engine === 'syncfusion') throw error;
         // Cancelamento não é motivo para tentar outro motor.

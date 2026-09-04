@@ -18,6 +18,8 @@ import SignatureReport from './SignatureReport';
 import { renderAsync } from 'docx-preview';
 import { Document, Page, pdfjs } from 'react-pdf';
 import { supabase } from '../config/supabase';
+import { montarNoServidor, retratoDoInterruptor } from '../config/montagemNoServidor';
+import { cronometroDaAssinatura } from '../utils/cronometroDeFases';
 import TelaDeAbertura from './publicSigning/TelaDeAbertura';
 import TelaDeConferencia from './publicSigning/TelaDeConferencia';
 import TelaDeComprovante from './publicSigning/TelaDeComprovante';
@@ -1874,6 +1876,7 @@ const PublicSigningPage: React.FC<PublicSigningPageProps> = ({ token }) => {
     currentRequest: SignatureRequest,
     currentSigner: Signer,
   ): Promise<string | null> => {
+    cronometroDaAssinatura.comecar();
     console.log('[PER-DOC] Fluxo per_document iniciado para o envelope:', currentRequest.id);
 
     // Lista de documentos do kit: principal (document_key='main') + anexos ('attachment-<i>').
@@ -1938,6 +1941,61 @@ const PublicSigningPage: React.FC<PublicSigningPageProps> = ({ token }) => {
       };
       console.log('[PER-DOC] Gerando', unit.documentKey, 'código:', verificationCode, 'docx:', unit.isDocx);
 
+      // ── A MONTAGEM NO SERVIDOR, quando ligada ──────────────────────────
+      //
+      // Ver `docs/assinatura-montagem-no-servidor.md` e
+      // `src/config/montagemNoServidor.ts`. Uma chamada substitui as TRÊS
+      // etapas abaixo — desenhar, subir e registrar — porque a Edge Function
+      // faz as três, com o hash apurado sobre os bytes que ela mesma produziu.
+      //
+      // O código de verificação passa a ser o QUE O SERVIDOR DEVOLVEU, não o
+      // gerado acima: é ele que está impresso no rodapé e no QR do arquivo que
+      // realmente existe. Usar o local aqui faria a tela de confirmação exibir
+      // um código que não abre documento nenhum.
+      //
+      // A recusa (`sem_original_congelado`) não é erro: é o estado normal
+      // enquanto o congelamento não alcança todos os caminhos. Cai para o
+      // navegador sem barulho — e é justamente por isso que o fluxo antigo
+      // continua inteiro logo abaixo.
+      // O interruptor ANUNCIA a decisão sempre, inclusive quando está desligado.
+      // Sem isto ele é mudo no caminho antigo, e "liguei e não mudou nada" fica
+      // indistinguível de "esqueci de ligar" — foi exatamente o que aconteceu no
+      // primeiro teste. O valor lido vai junto para desarmar a dúvida do hash
+      // router (o `?montagem=` cai DENTRO do fragmento, não em `location.search`).
+      const interruptor = montarNoServidor();
+      console.log('[PER-DOC] montagem no servidor:',
+        interruptor.noServidor ? 'LIGADA' : 'desligada',
+        '— decidido por:', interruptor.origem, '|', retratoDoInterruptor());
+      if (interruptor.noServidor) {
+        const noServidor = await signatureService.montarDocumentoAssinadoNoServidor(
+          token, unit.documentKey,
+        );
+        if (noServidor.estado === 'montou') {
+          console.log('[PER-DOC] montado NO SERVIDOR', unit.documentKey,
+            'origem do interruptor:', interruptor.origem,
+            'código:', noServidor.verification_code,
+            noServidor.ja_montado ? '(já existia)' : '');
+          const urlDoServidor = await signatureService.getPublicFileUrl(
+            token, noServidor.signed_file_path,
+          );
+          results.push({
+            documentKey: unit.documentKey,
+            displayName: unit.displayName,
+            verificationCode: noServidor.verification_code || verificationCode,
+            url: urlDoServidor,
+          });
+          if (unit.documentKey === 'main') mainSignedUrl = urlDoServidor;
+          continue;
+        }
+        if (noServidor.estado === 'recusou') {
+          console.log('[PER-DOC] servidor não monta', unit.documentKey, '—',
+            noServidor.codigo, '— seguindo no navegador');
+        } else {
+          console.warn('[PER-DOC] montagem no servidor FALHOU para', unit.documentKey,
+            '—', noServidor.motivo, '— seguindo no navegador');
+        }
+      }
+
       let filePath: string;
       let sha256: string;
       let integritySha256: string | null = null;
@@ -1945,7 +2003,8 @@ const PublicSigningPage: React.FC<PublicSigningPageProps> = ({ token }) => {
       const cleanupHosts: HTMLElement[] = [];
       try {
         if (unit.isDocx) {
-          const host = await renderDocxOffscreen(unit.sourceUrl, 'docx-offscreen-style-per-document');
+          const host = await cronometroDaAssinatura.medir('renderizar o DOCX (docx-preview)',
+            () => renderDocxOffscreen(unit.sourceUrl!, 'docx-offscreen-style-per-document'));
           cleanupHosts.push(host);
           const out = await pdfSignatureService.saveSignedDocxAsPdf({
             request: currentRequest,
@@ -1977,7 +2036,8 @@ const PublicSigningPage: React.FC<PublicSigningPageProps> = ({ token }) => {
       // persistência NÃO pode ser silenciosa (requisito jurídico) — coletamos
       // para lançar um erro explícito ao final.
       try {
-        await signatureService.attachSignedDocumentPublic(token, {
+        await cronometroDaAssinatura.medir('registrar no banco (RPC)', () =>
+          signatureService.attachSignedDocumentPublic(token, {
           document_key: unit.documentKey,
           document_type: unit.documentType,
           display_name: unit.displayName,
@@ -1988,7 +2048,7 @@ const PublicSigningPage: React.FC<PublicSigningPageProps> = ({ token }) => {
           document_hash: integritySha256,
           page_count: pageCount,
           sort_order: unit.sortOrder,
-        });
+        }));
       } catch (persistErr) {
         console.error('[PER-DOC] Persistência falhou para', unit.documentKey, persistErr);
         persistFailures.push(unit.displayName);
@@ -2026,6 +2086,11 @@ const PublicSigningPage: React.FC<PublicSigningPageProps> = ({ token }) => {
       const focusUrl = mainSignedUrl ?? results[0]?.url ?? null;
       if (focusUrl) setSignedDocumentUrl(focusUrl);
       console.log('[PER-DOC] Envelope concluído. Documentos assinados finais:', results.length);
+      // O relatório de onde o tempo foi. A linha "não medido" é a que impede a
+      // conclusão errada: se ela for grande, falta instrumentar, e não se deve
+      // otimizar a fase que por acaso foi cronometrada.
+      console.log(cronometroDaAssinatura.relatorio(
+        `assinatura de ${results.length} documento(s)`));
       return focusUrl;
     }
 
@@ -3112,24 +3177,57 @@ const PublicSigningPage: React.FC<PublicSigningPageProps> = ({ token }) => {
       if (request) {
         try {
           if (request.signature_model === 'per_document') {
-            // Modelo VERSIONADO: gera 1 PDF assinado por arquivo do kit (principal +
-            // cada anexo), cada um com código/hash/arquivo próprios. Legado intacto no else.
-            console.log('[PER-DOC] handleSign → geração individual por arquivo (principal + anexos)');
-            await generatePerDocumentSignedForSigner(request, result);
-            const finalizeRes = await signatureService.finalizePerDocumentSigningPublic(token, {
-              expectedDocumentCount: expectedPerDocumentCount,
-              origin: window.location.origin,
-              ipAddress,
-              userAgent,
-            });
-            // Fase 2: o orquestrador server-side é a autoridade de finalização. Se ele
-            // ainda não confirmou (lock em outro worker / aguardando persistência),
-            // aguardamos a confirmação REAL via polling do job antes de seguir — nunca
-            // tratamos como concluído sem o servidor ter finalizado o envelope.
-            if (finalizeRes && finalizeRes.finalized !== true && !finalizeRes.reason) {
-              const waited = await signatureService.waitForFinalizationPublic(token, { timeoutMs: 30000 });
-              if (waited.failed) {
-                throw new Error(waited.error || 'Falha na finalização do envelope no servidor.');
+            const interruptor = montarNoServidor();
+            if (interruptor.noServidor) {
+              // A assinatura já criou um job DURÁVEL no banco. A página espera
+              // apenas uma janela curta para conseguir mostrar os PDFs prontos;
+              // fechar a aba daqui em diante não interrompe nem perde o trabalho.
+              console.log('[PER-DOC] montagem do envelope entregue ao servidor');
+              const assembly = await signatureService.waitForAssemblyPublic(token, {
+                timeoutMs: 20_000,
+              });
+
+              if (assembly.finished) {
+                const latest = await signatureService.getPublicSigningBundle(token).catch(() => null);
+                if (latest?.request) setRequest(latest.request);
+                if (latest?.request?.status === 'signed') {
+                  const docs = await loadEnvelopeSignedDocuments(latest.request);
+                  setSignedDocuments(docs);
+                  const main = docs.find((doc) => doc.documentKey === 'main') ?? docs[0];
+                  if (main?.url) setSignedDocumentUrl(main.url);
+                }
+              } else if (assembly.failed || assembly.status === 'none') {
+                // Compatibilidade com envelope antigo que ainda contém DOCX com
+                // coordenada manual da paginação do navegador. É o único caso em
+                // que o servidor recusa de forma permanente; o fluxo anterior
+                // continua como salvaguarda enquanto esses envelopes existirem.
+                console.warn('[PER-DOC] servidor não pode concluir este envelope; usando compatibilidade local:',
+                  assembly.error ?? assembly.status);
+                await generatePerDocumentSignedForSigner(request, result);
+                await signatureService.finalizePerDocumentSigningPublic(token, {
+                  expectedDocumentCount: expectedPerDocumentCount,
+                  origin: window.location.origin,
+                  ipAddress,
+                  userAgent,
+                });
+              } else {
+                toast.success('Assinatura registrada. Os documentos continuarão sendo finalizados no servidor; você já pode fechar esta página.');
+              }
+            } else {
+              // Rollback explícito pelo feature flag: mantém o caminho anterior.
+              console.log('[PER-DOC] montagem server-side desligada; usando fluxo local');
+              await generatePerDocumentSignedForSigner(request, result);
+              const finalizeRes = await signatureService.finalizePerDocumentSigningPublic(token, {
+                expectedDocumentCount: expectedPerDocumentCount,
+                origin: window.location.origin,
+                ipAddress,
+                userAgent,
+              });
+              if (finalizeRes && finalizeRes.finalized !== true && !finalizeRes.reason) {
+                const waited = await signatureService.waitForFinalizationPublic(token, { timeoutMs: 30000 });
+                if (waited.failed) {
+                  throw new Error(waited.error || 'Falha na finalização do envelope no servidor.');
+                }
               }
             }
           } else {

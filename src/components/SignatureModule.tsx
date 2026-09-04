@@ -27,6 +27,7 @@ import { openWhatsAppChat } from '../utils/whatsappChat';
 import { events, SYSTEM_EVENTS } from '../utils/events';
 import { documentTemplateService } from '../services/documentTemplate.service';
 import { signatureFieldsService } from '../services/signatureFields.service';
+import { congelarOriginais } from '../services/congelamentoDeOriginal.service';
 import { settingsService } from '../services/settings.service';
 import { useDeleteConfirm } from '../contexts/DeleteConfirmContext';
 import { userNotificationService } from '../services/userNotification.service';
@@ -300,6 +301,10 @@ const SignatureModule: React.FC<SignatureModuleProps> = ({ prefillData, focusReq
 
   const [wizardStep, setWizardStep] = useState<WizardStep>('list');
   const [wizardLoading, setWizardLoading] = useState(false);
+  // O que está acontecendo enquanto o botão gira. Converter um kit de três
+  // documentos leva segundos de verdade, e tela parada por segundos é
+  // indistinguível de tela travada.
+  const [wizardEtapa, setWizardEtapa] = useState<string | null>(null);
 
   const [openProcessLoading, setOpenProcessLoading] = useState(false);
   const [showCreateProcess, setShowCreateProcess] = useState(false);
@@ -346,6 +351,12 @@ const SignatureModule: React.FC<SignatureModuleProps> = ({ prefillData, focusReq
   const [selectedClientPhone, setSelectedClientPhone] = useState<string | null>(null);
   const [uploadedFile, setUploadedFile] = useState<File | null>(null);
   const [uploadedFiles, setUploadedFiles] = useState<File[]>([]); // Múltiplos arquivos (envelope)
+  /**
+   * Os `[[ASSINATURA]]` achados ao converter um `.docx` ENVIADO, por chave de
+   * documento. Eles nascem na SELEÇÃO (não no congelamento) porque é ali que a
+   * conversão acontece agora — ver `handleFilesSelect`.
+   */
+  const [marcadoresDoUpload, setMarcadoresDoUpload] = useState<Record<string, any[]>>({});
   const [selectedGenDocIds, setSelectedGenDocIds] = useState<string[]>([]); // Multi-seleção de documentos gerados
   const [genDocsSearchTerm, setGenDocsSearchTerm] = useState('');
   const [dragOver, setDragOver] = useState(false);
@@ -1804,6 +1815,7 @@ const SignatureModule: React.FC<SignatureModuleProps> = ({ prefillData, focusReq
     setSelectedClientId(null); setSelectedClientName(null);
     setUploadedFile(null);
     setUploadedFiles([]);
+    setMarcadoresDoUpload({});
     setSelectedGenDocIds([]);
     setGenDocsSearchTerm('');
     clearSelectedUploadFileIndexes();
@@ -1850,9 +1862,70 @@ const SignatureModule: React.FC<SignatureModuleProps> = ({ prefillData, focusReq
   };
 
   // Múltiplos arquivos (envelope)
-  const handleFilesSelect = (fileList: FileList) => {
-    const files = Array.from(fileList).filter((f) => f.type.includes('pdf'));
-    if (files.length === 0) { toast.error('Selecione arquivos PDF'); return; }
+  /** `.doc`/`.docx` pelo nome ou pelo tipo — o Windows nem sempre manda o MIME. */
+  const ehWord = (f: File) =>
+    /\.(docx?|doc)$/i.test(f.name)
+    || f.type.includes('officedocument.wordprocessingml')
+    || f.type === 'application/msword';
+
+  /**
+   * O PDF NASCE AQUI, na seleção — e essa é a decisão que resolve dois
+   * problemas de uma vez.
+   *
+   * Aceitar `.docx` no painel só seria útil se o arquivo virasse PDF em algum
+   * momento. Fazer isso no CONGELAMENTO (que é onde o resto do sistema
+   * converte) traria de volta a divergência de paginação: os campos seriam
+   * marcados sobre uma renderização e o documento assinado nasceria de outra.
+   *
+   * Convertendo na seleção, o assistente inteiro — visualização, tela de
+   * posicionamento, congelamento e assinatura — passa a ver O MESMO PDF. Não há
+   * duas paginações para divergir.
+   *
+   * Os `[[ASSINATURA]]` são detectados e OCULTADOS nessa mesma passada (senão o
+   * marcador sai impresso na folha), e ficam guardados para virar campo no
+   * envio — porque a partir daqui o congelamento vê um PDF e não tem mais o que
+   * procurar.
+   */
+  const handleFilesSelect = async (fileList: FileList) => {
+    const escolhidos = Array.from(fileList).filter((f) => f.type.includes('pdf') || ehWord(f));
+    if (escolhidos.length === 0) { toast.error('Selecione arquivos PDF ou Word'); return; }
+
+    const files: File[] = [];
+    const marcadores: Record<string, any[]> = {};
+    const paraConverter = escolhidos.filter(ehWord).length;
+    let convertidos = 0;
+
+    try {
+      for (let i = 0; i < escolhidos.length; i++) {
+        const original = escolhidos[i];
+        if (!ehWord(original)) { files.push(original); continue; }
+
+        convertidos += 1;
+        setWizardEtapa(paraConverter > 1
+          ? `Convertendo ${convertidos} de ${paraConverter}: ${original.name}`
+          : `Convertendo ${original.name} para PDF…`);
+
+        const { docxToPdf } = await import('@/utils/docxToPdf');
+        const { blob, marcadores: achados } = await docxToPdf(original, {
+          engine: 'preview', detectarMarcadores: true,
+        });
+        const nomePdf = original.name.replace(/\.(docx?|doc)$/i, '') + '.pdf';
+        files.push(new File([blob], nomePdf, { type: 'application/pdf' }));
+
+        if (achados.length > 0) {
+          marcadores[i === 0 ? 'main' : `attachment-${i - 1}`] = achados;
+        }
+      }
+    } catch (e) {
+      console.error('[assinatura] falha ao converter Word para PDF', e);
+      toast.error(e instanceof Error
+        ? `Não foi possível converter o documento: ${e.message}`
+        : 'Não foi possível converter o documento para PDF.');
+      return;
+    } finally {
+      setWizardEtapa(null);
+    }
+    setMarcadoresDoUpload(marcadores);
 
     cleanupLocalViewerUrls(viewerDocuments, pdfPreviewUrls);
 
@@ -1879,6 +1952,7 @@ const SignatureModule: React.FC<SignatureModuleProps> = ({ prefillData, focusReq
     setUploadedFiles([]);
     setUploadedFile(null);
     setSelectedDocumentName('');
+    setMarcadoresDoUpload({});
     setSelectedDocumentId('');
     setSelectedDocumentPath('');
     setSelectedGenDocIds([]);
@@ -2656,22 +2730,37 @@ const SignatureModule: React.FC<SignatureModuleProps> = ({ prefillData, focusReq
     try {
       setWizardLoading(true);
       const docId = selectedDocumentId || crypto.randomUUID();
-      let docPath: string | null = selectedDocumentPath || null;
-      if (!docPath && uploadedFile) {
-        docPath = await signatureService.uploadSignatureDocumentPdf(uploadedFile, docId);
-        setSelectedDocumentPath(docPath);
-      }
 
-      // Upload attachment files (uploadedFiles[1+]) when coming from manual file upload
-      let attachPaths: string[] | null = selectedAttachmentPaths;
-      if (uploadedFiles.length > 1 && !selectedAttachmentPaths) {
-        const uploaded: string[] = [];
-        for (let i = 1; i < uploadedFiles.length; i++) {
-          const p = await signatureService.uploadSignatureDocumentPdf(uploadedFiles[i], docId);
-          uploaded.push(p);
-        }
-        attachPaths = uploaded.length > 0 ? uploaded : null;
-      }
+      // ── CONGELAR O ORIGINAL ──────────────────────────────────────────────
+      // O `.docx` vira PDF AQUI, uma vez, no navegador de quem cria. Antes ele
+      // ia inteiro para o envelope e era o aparelho de quem ASSINA que o
+      // desenhava, na hora de assinar, para então montar o PDF assinado e
+      // mandar tudo pronto — hash inclusive. Era isso que prendia a montagem no
+      // cliente: desenhar Word exige DOM, e o servidor não tem.
+      //
+      // A partir daqui o envelope é sempre PDF, quem assina recebe exatamente o
+      // arquivo congelado, e a montagem pode passar para o servidor.
+      // Ver `docs/assinatura-montagem-no-servidor.md`.
+      const entradas = [
+        selectedDocumentPath
+          ? { nome: selectedDocumentName || selectedDocumentPath.split('/').pop() || 'documento', caminho: selectedDocumentPath }
+          : { nome: uploadedFile?.name || selectedDocumentName || 'documento', arquivo: uploadedFile },
+        ...(selectedAttachmentPaths?.length
+          ? selectedAttachmentPaths.map((p) => ({ nome: p.split('/').pop() || 'anexo', caminho: p }))
+          : uploadedFiles.slice(1).map((f) => ({ nome: f.name, arquivo: f }))),
+      ];
+
+      const congelado = await congelarOriginais(entradas, {
+        documentId: docId,
+        onProgress: (frase) => setWizardEtapa(frase),
+      });
+      setWizardEtapa(null);
+
+      const docPath: string | null = congelado.caminhoPrincipal || null;
+      if (docPath !== selectedDocumentPath) setSelectedDocumentPath(docPath || '');
+      const attachPaths: string[] | null = congelado.caminhosDosAnexos.length > 0
+        ? congelado.caminhosDosAnexos
+        : null;
 
       // Envelope com MÚLTIPLOS documentos (principal + anexos) usa o modelo
       // `per_document`: 1 PDF assinado + código de verificação PRÓPRIO por arquivo,
@@ -2683,7 +2772,11 @@ const SignatureModule: React.FC<SignatureModuleProps> = ({ prefillData, focusReq
 
       const payload: CreateSignatureRequestDTO = {
         document_id: docId,
-        document_name: selectedDocumentName, document_path: docPath,
+        // O nome é o do arquivo CONGELADO: "contrato.pdf", não "contrato.docx".
+        // Ele aparece no e-mail que o cliente recebe e no cabeçalho do laudo, e
+        // anunciar uma extensão que o envelope não tem mais é mentira pequena
+        // que só confunde quem for conferir.
+        document_name: congelado.nomePrincipal || selectedDocumentName, document_path: docPath,
         attachment_paths: attachPaths,
         client_id: selectedClientId, client_name: selectedClientName, auth_method: settings.authMethod,
         // "Bloquear após prazo" desligado tem de significar SEM prazo — antes a
@@ -2696,14 +2789,92 @@ const SignatureModule: React.FC<SignatureModuleProps> = ({ prefillData, focusReq
         signers: signers.map((s, i) => ({ name: s.name, email: s.email, cpf: s.cpf || null, phone: s.phone || null, role: s.role || 'Signatário', order: i + 1 })),
       };
       
-      console.log('📎 Criando solicitação com anexos:', selectedAttachmentPaths);
-      console.log('📦 Payload completo:', JSON.stringify(payload, null, 2));
+      // O payload inteiro ia para o console — nome, CPF, telefone e e-mail de
+      // cada signatário, em texto puro, a cada criação. O que ajuda a depurar é
+      // a forma do envelope, não os dados das pessoas dentro dele.
+      console.log('📦 Criando solicitação:', {
+        documentos: 1 + (attachPaths?.length ?? 0),
+        modelo: payload.signature_model,
+        signatarios: payload.signers.length,
+        convertidos: congelado.convertidos,
+      });
       created = await signatureService.createRequest(payload);
-      console.log('✅ Solicitação criada:', created.id, 'attachment_paths no response:', (created as any).attachment_paths);
+      console.log('✅ Solicitação criada:', created.id, 'anexos:', (created as any).attachment_paths?.length ?? 0);
+
+      // ── O SERVIDOR CONFERE O QUE FOI CONGELADO ───────────────────────────
+      // Ele relê cada arquivo no Storage e apura ELE MESMO o SHA-256 e o
+      // formato. A impressão digital do documento de origem — a que o dossiê
+      // exibe e a defesa cita — deixa de vir daqui.
+      //
+      // Falha macia: o envelope já existe e vale sem isto, e a função é
+      // idempotente (dá para repetir depois). Mas não passa calado: um
+      // congelamento que não aconteceu tem de aparecer para alguém.
+      const congelamento = await signatureService.congelarOriginalNoServidor(created.id, congelado.proveniencia);
+      if (congelamento.parecer !== 'INTEGRO') {
+        console.warn('[congelamento] parecer do servidor:', congelamento);
+        toast.error(
+          congelamento.parecer === 'NAO_INTEGRO'
+            ? 'Atenção: o servidor encontrou divergência nos arquivos do envelope.'
+            : 'O envelope foi criado, mas o servidor ainda não conferiu os arquivos.',
+        );
+      }
       console.log('📍 Campos de assinatura no estado:', fields.length, fields.map(f => ({ doc: f.documentId, page: f.pageNumber, type: f.fieldType })));
-      if (fields.length > 0) {
-        const createdSignersOrdered = [...created.signers].sort((a, b) => (a.order ?? 0) - (b.order ?? 0));
-        const fieldsPayload = fields.filter((f) => f.fieldType === 'signature').map((f) => {
+      const createdSignersOrdered = [...created.signers].sort((a, b) => (a.order ?? 0) - (b.order ?? 0));
+
+      // ── OS MARCADORES [[ASSINATURA]] VIRAM CAMPOS AQUI ───────────────────
+      // Antes do congelamento, o marcador era procurado na hora de ASSINAR,
+      // sobre o Word renderizado na tela de quem assina. Agora o original vira
+      // PDF na criação, e o marcador é OCULTADO para não ser impresso na folha
+      // — então na assinatura não há mais o que procurar. Se a posição não for
+      // gravada agora, ela some, e a rubrica cai no rodapé por fallback.
+      //
+      // A regra de precedência é a MESMA de antes: documento que tem campo
+      // marcado a mão ignora o marcador automático. Somar os dois produziria
+      // duas assinaturas no mesmo documento.
+      const documentosComCampoManual = new Set(
+        fields.filter((f) => f.fieldType === 'signature').map((f) => f.documentId || 'main'),
+      );
+      // Os marcadores vêm de DOIS momentos, e os dois valem:
+      //   · do congelamento, quando o arquivo chegou como `.docx` (caminho dos
+      //     documentos gerados, que ainda convertem lá);
+      //   · da SELEÇÃO, quando o `.docx` foi enviado pelo painel e já virou PDF
+      //     ali (ver `handleFilesSelect`) — aí o congelamento vê um PDF e não
+      //     tem mais o que procurar.
+      // Sem somar os dois, o upload de Word entraria sem campo de assinatura e a
+      // rubrica cairia no rodapé por fallback.
+      const marcadoresDeTodasAsOrigens: Record<string, any[]> = {
+        ...congelado.marcadores, ...marcadoresDoUpload,
+      };
+      const camposDeMarcador = Object.entries(marcadoresDeTodasAsOrigens).flatMap(([chave, lista]) => {
+        if (documentosComCampoManual.has(chave)) return [];
+        return lista.flatMap((m) => {
+          // O índice do marcador é a ORDEM do assinante: [[ASSINATURA_2]] é do
+          // segundo. Marcador que aponta para assinante inexistente é descartado
+          // — gravar com signer_id nulo criaria um campo que ninguém assina, e o
+          // envelope ficaria eternamente pendente sem motivo visível.
+          const assinante = createdSignersOrdered.find((cs) => (cs.order ?? 0) === m.indiceDoAssinante);
+          if (!assinante) {
+            console.warn(`[campos] [[ASSINATURA_${m.indiceDoAssinante}]] em ${chave} não tem assinante correspondente — ignorado.`);
+            return [];
+          }
+          return [{
+            document_id: chave,
+            signer_id: assinante.id,
+            field_type: 'signature' as const,
+            page_number: m.pagina,
+            x_percent: m.x_percent,
+            y_percent: m.y_percent,
+            w_percent: m.w_percent,
+            h_percent: m.h_percent,
+          }];
+        });
+      });
+      if (camposDeMarcador.length > 0) {
+        console.log('📍 Campos vindos de [[ASSINATURA]]:', camposDeMarcador.length);
+      }
+
+      if (fields.length > 0 || camposDeMarcador.length > 0) {
+        const camposManuais = fields.filter((f) => f.fieldType === 'signature').map((f) => {
           const signer = signers.find((s) => s.id === f.signerId);
           const signerIndex = signers.findIndex((s) => s.id === f.signerId);
           const signerOrder = signer?.order ?? (signerIndex >= 0 ? signerIndex + 1 : null);
@@ -2721,6 +2892,7 @@ const SignatureModule: React.FC<SignatureModuleProps> = ({ prefillData, focusReq
             h_percent: f.hPercent,
           };
         });
+        const fieldsPayload = [...camposManuais, ...camposDeMarcador];
         console.log('📍 Salvando campos no banco:', fieldsPayload.length, fieldsPayload);
         const savedFields = await signatureFieldsService.upsertFields(created.id, fieldsPayload);
         console.log('📍 Campos salvos:', savedFields);
@@ -2770,6 +2942,7 @@ const SignatureModule: React.FC<SignatureModuleProps> = ({ prefillData, focusReq
       toast.error(error.message || 'Erro');
     } finally {
       setWizardLoading(false);
+      setWizardEtapa(null);
     }
   };
 
@@ -3241,9 +3414,37 @@ const SignatureModule: React.FC<SignatureModuleProps> = ({ prefillData, focusReq
             await downloadOriginalPdf(signedUrl, `${request.document_name}_assinado.pdf`);
             return;
           }
+
+          // ── UMA VEZ SÓ, E ESTA É A TRAVA QUE FALTAVA ──────────────────────
+          // O ponteiro existe: o artefato legal deste envelope JÁ foi
+          // produzido. Se o arquivo não abre, o problema está no
+          // armazenamento — e a resposta certa é dizer isso, não fabricar um
+          // substituto.
+          //
+          // Era exatamente aqui que o código caía para o bloco de geração
+          // abaixo: um clique que só pedia para BAIXAR montava um segundo
+          // "documento assinado", com bytes diferentes dos que foram
+          // assinados, e ainda regravava `signed_pdf_sha256` com um hash
+          // calculado neste navegador — apagando a impressão digital do
+          // documento verdadeiro.
+          //
+          // Documento assinado nasce uma vez. Depois disso ele é lido, nunca
+          // refeito. Ver `docs/assinatura-montagem-no-servidor.md`.
+          console.error('[DOWNLOAD] artefato registrado mas ausente no Storage:', signedSigner.signed_document_path);
+          toast.error(
+            'O documento assinado está registrado, mas o arquivo não foi encontrado no armazenamento. '
+            + 'Nada foi gerado no lugar dele — é preciso investigar o arquivo original.',
+          );
+          return;
         }
-        
-        // Se não existe, verificar se é DOCX ou PDF
+
+        // Sem ponteiro: nunca houve artefato para este signatário, então
+        // produzi-lo agora é a PRIMEIRA vez, não uma segunda via. O caminho
+        // grava o ponteiro logo em seguida, e é ele que faz o próximo clique
+        // cair no `return` acima em vez de gerar de novo.
+        toast.info('Documento assinado ainda não arquivado — gerando pela primeira vez.');
+
+        // Verificar se é DOCX ou PDF
         const docPath = request.document_path?.toLowerCase() || '';
         const isDocxFile = docPath.endsWith('.docx') || docPath.endsWith('.doc');
         
@@ -4008,6 +4209,14 @@ const SignatureModule: React.FC<SignatureModuleProps> = ({ prefillData, focusReq
               
               {wizardStep === 'settings' ? (
                 <div className="flex items-center gap-2">
+                  {/* Converter um kit de três documentos leva segundos de
+                      verdade. Sem dizer qual arquivo está sendo preparado, e de
+                      quantos, a espera é indistinguível de travamento. */}
+                  {wizardLoading && wizardEtapa && (
+                    <span className="hidden sm:block text-xs text-slate-500 mr-1 max-w-[22rem] truncate" title={wizardEtapa}>
+                      {wizardEtapa}
+                    </span>
+                  )}
                   <button
                     type="button"
                     onClick={() => void handleSubmit(false)}
@@ -4096,7 +4305,7 @@ const SignatureModule: React.FC<SignatureModuleProps> = ({ prefillData, focusReq
                   onDragLeave={() => setDragOver(false)}
                   onDrop={(e) => { e.preventDefault(); setDragOver(false); if (e.dataTransfer.files?.length) handleFilesSelect(e.dataTransfer.files); }}
                 >
-                  <input ref={fileInputRef} type="file" accept=".pdf" multiple onChange={(e) => e.target.files?.length && handleFilesSelect(e.target.files)} className="hidden" />
+                  <input ref={fileInputRef} type="file" accept=".pdf,.doc,.docx" multiple onChange={(e) => e.target.files?.length && handleFilesSelect(e.target.files)} className="hidden" />
                   {uploadedFiles.length > 0 ? (
                     <div className="flex flex-col items-center gap-3">
                       <CheckCircle className="w-10 h-10 text-emerald-500" />
@@ -4184,7 +4393,11 @@ const SignatureModule: React.FC<SignatureModuleProps> = ({ prefillData, focusReq
                   ) : (
                     <>
                       <Upload className="w-10 h-10 text-slate-300 mx-auto mb-3" />
-                      <p className="text-sm text-slate-500 mb-3">Arraste arquivos ou</p>
+                      <p className="text-sm text-slate-500 mb-1">Arraste arquivos ou</p>
+                      {/* Word é convertido para PDF na hora da seleção, e é por
+                          isso que a tela diz isso aqui: quem envia um .docx
+                          precisa saber que o documento assinado será o PDF. */}
+                      <p className="text-[11px] text-slate-400 mb-3">PDF ou Word (.docx) — o Word vira PDF automaticamente</p>
                       <button type="button" onClick={() => fileInputRef.current?.click()} className="px-4 py-2 bg-slate-900 text-white rounded text-sm font-medium hover:bg-slate-800">Selecionar arquivos</button>
                     </>
                   )}
@@ -6895,9 +7108,22 @@ const SignatureModule: React.FC<SignatureModuleProps> = ({ prefillData, focusReq
                                 window.open(signedUrl, '_blank');
                                 return;
                               }
+
+                              // Mesma trava do download, pela mesma razão: o
+                              // artefato já foi produzido uma vez. ABRIR um
+                              // documento não pode criar outro documento —
+                              // e aqui criava, com hash calculado no navegador
+                              // por cima do hash do que foi assinado de fato.
+                              console.error('[VIEW] artefato registrado mas ausente no Storage:', signedSigner.signed_document_path);
+                              toast.error(
+                                'O documento assinado está registrado, mas o arquivo não foi encontrado no armazenamento. '
+                                + 'Nada foi gerado no lugar dele.',
+                              );
+                              return;
                             }
-                            
-                            // Se não existe, gerar, salvar e abrir
+
+                            // Sem ponteiro: é a primeira vez, não uma segunda via.
+                            // Gerar, salvar e abrir
                             // Importante: se for DOCX, renderizar offscreen e converter para PDF completo
                             if (isDocxFile) {
                               toast.info('Gerando documento DOCX assinado...');

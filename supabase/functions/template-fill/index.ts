@@ -812,6 +812,50 @@ Deno.serve(async (req) => {
       console.warn('Erro ao processar signature_field_config:', e);
     }
 
+    // ── CONGELAR A ORIGEM NO SERVIDOR ────────────────────────────────────────
+    //
+    // Este é o passo que traz o `template-fill` para a montagem server-side.
+    // Sem ele, o `.docx` recém-montado nunca vira PDF congelado, e a assinatura
+    // continua sendo desenhada no celular de quem assina — ~8 s por documento,
+    // 48 s num kit de 6 (medido em 04/09/2026).
+    //
+    // A função converte cada `.docx` no `docs.jurius-api.com`, troca o
+    // `[[ASSINATURA]]` por uma âncora invisível ANTES de converter (senão o
+    // marcador é impresso na folha) e grava tanto `signature_source_files`
+    // quanto os `signature_fields` que os marcadores viraram.
+    //
+    // FALHA MACIA, e isso é requisito: o cliente acabou de preencher o
+    // formulário e está esperando o link. Se o conversor estiver fora do ar,
+    // derrubar a criação do envelope trocaria "a assinatura vai demorar 8 s por
+    // documento" por "o cliente não recebeu documento nenhum". Sem congelamento
+    // o envelope funciona exatamente como funcionava antes.
+    try {
+      const congelamento = await fetch(
+        `${Deno.env.get('SUPABASE_URL')}/functions/v1/congelar-docx-no-servidor`,
+        {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            // Service role: é chamada de servidor para servidor. A função do
+            // outro lado reconhece esta chave e dispensa o porteiro de equipe,
+            // que aqui não existe — quem preencheu o formulário é o cliente.
+            Authorization: `Bearer ${Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')}`,
+          },
+          body: JSON.stringify({ request_id: request.id }),
+        },
+      );
+      const parecer = await congelamento.json().catch(() => null);
+      if (!congelamento.ok || !parecer?.success) {
+        console.warn('[template-fill] congelamento no servidor não concluiu:',
+          congelamento.status, parecer?.error ?? '');
+      } else {
+        console.log('[template-fill] origem congelada no servidor:',
+          JSON.stringify(parecer.resultados), 'campos:', parecer.campos_gravados);
+      }
+    } catch (e) {
+      console.warn('[template-fill] congelamento no servidor falhou:', e);
+    }
+
     // Devolve ao link o cliente e a conversa. É por esse vínculo que o módulo
     // WhatsApp acompanha o kit — o painel "Assinaturas pendentes", o selo na
     // lista de conversas e o lembrete automático leem tudo por `client_id`.

@@ -1,5 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
+import { readFileSync } from 'node:fs';
 import {
   lerIdentidadeConfirmada,
   rotuloIdentidadeConfirmada,
@@ -187,4 +188,22 @@ test('sem canal registrado a frase NÃO afirma WhatsApp nem SMS', () => {
   const semCanal = autenticacaoOtpSemCanal('65984046375');
   assert.ok(!/whatsapp/i.test(semCanal));
   assert.ok(!/sms/i.test(semCanal));
+});
+
+// ── O espelho do servidor ────────────────────────────────────────────────────
+//
+// A montagem do PDF assinado saiu do navegador (ver
+// `docs/assinatura-montagem-no-servidor.md`) e o laudo precisa das MESMAS
+// frases: se a Edge Function afirmar "SMS" onde a tela diz "WhatsApp", o
+// documento e o painel contam histórias diferentes sobre o mesmo ato.
+//
+// O módulo não tem import nenhum de propósito, então a cópia é byte a byte e
+// esta comparação é a rede que impede as duas de divergirem em silêncio.
+test('o espelho em supabase/functions/_shared/montagem é idêntico byte a byte', () => {
+  const src = readFileSync(new URL('./identidadeConfirmada.ts', import.meta.url), 'utf8');
+  const espelho = readFileSync(
+    new URL('../../supabase/functions/_shared/montagem/identidadeConfirmada.ts', import.meta.url),
+    'utf8',
+  );
+  assert.equal(espelho, src, 'identidadeConfirmada.ts divergiu — copie o arquivo inteiro');
 });
