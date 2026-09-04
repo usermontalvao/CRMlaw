@@ -203,6 +203,134 @@ class SignatureService {
 
   // ==================== SIGNATURE REQUESTS ====================
 
+  /**
+   * Quais destes clientes têm conversa de WhatsApp aberta.
+   *
+   * É a única coisa que falta para a tela saber se a cobrança automática vai
+   * sair: o robô (`whatsapp-signature-followup`) só fala em conversa que não
+   * esteja `closed`, e é exatamente aí que ele emudece sem avisar.
+   *
+   * Devolve `null` — e não um conjunto vazio — quando a consulta falha. Um
+   * conjunto vazio significa "nenhum destes tem conversa"; `null` significa
+   * "não deu para saber", e a tela não acusa nada nesse caso.
+   */
+  async listClientsWithOpenWhatsappConversation(clientIds: string[]): Promise<Set<string> | null> {
+    const ids = Array.from(new Set(clientIds.filter(Boolean)));
+    if (ids.length === 0) return new Set();
+
+    const { data, error } = await supabase
+      .from('whatsapp_conversations')
+      .select('client_id')
+      .in('client_id', ids)
+      .neq('status', 'closed');
+
+    if (error) return null;
+    return new Set((data ?? []).map((row: { client_id: string | null }) => row.client_id).filter(Boolean) as string[]);
+  }
+
+  /**
+   * A foto de cada cliente, pronta para a lista.
+   *
+   * O bucket `perfil` é público, então a URL sai direto — sem uma ida ao
+   * servidor por cartão. Cliente sem foto simplesmente não entra no mapa, e a
+   * tela cai nas iniciais.
+   */
+  async listClientPhotos(clientIds: string[]): Promise<Record<string, string>> {
+    const ids = Array.from(new Set(clientIds.filter(Boolean)));
+    if (ids.length === 0) return {};
+
+    const { data, error } = await supabase
+      .from('clients')
+      .select('id, photo_path')
+      .in('id', ids)
+      .not('photo_path', 'is', null);
+
+    if (error) return {};
+
+    const fotos: Record<string, string> = {};
+    for (const linha of (data ?? []) as { id: string; photo_path: string | null }[]) {
+      if (!linha.photo_path) continue;
+      try {
+        const { data: url } = supabase.storage.from('perfil').getPublicUrl(linha.photo_path);
+        if (url?.publicUrl) fotos[linha.id] = url.publicUrl;
+      } catch {
+        // sem foto utilizável: a tela usa as iniciais
+      }
+    }
+    return fotos;
+  }
+
+  /**
+   * O ROSTO DE QUEM ASSINOU — a selfie do próprio ato.
+   *
+   * ┌─ A REGRA DO ROSTO NO CRM ────────────────────────────────────────────┐
+   * │  MÓDULO ASSINATURAS ....... a selfie tirada na hora de assinar.      │
+   * │  TODO O RESTO DO CRM ...... a foto do contato no WhatsApp.           │
+   * └──────────────────────────────────────────────────────────────────────┘
+   *
+   * Decisão do escritório em 03/09/2026, depois de ver as duas opções na tela.
+   * A razão é que aqui a pergunta é outra: nos demais módulos o rosto serve
+   * para reconhecer *o cliente*, e a foto que ele mesmo publica no WhatsApp
+   * responde bem; no módulo de assinaturas o rosto serve para reconhecer *o
+   * ato* — quem estava do outro lado quando aquele documento foi assinado. A
+   * selfie é a única imagem que responde a isso, e responde com a data certa.
+   *
+   * Por isso esta função é do módulo de assinaturas e não deve ser reaproveitada
+   * fora dele. Quem precisar do rosto do cliente em outra tela usa a foto do
+   * WhatsApp (`whatsapp_conversations.contact_avatar_path`, resolvida por
+   * `resolveAvatarUrl`) — é o que `MissedCallWidget`, `CallHistoryList` e o
+   * módulo de conversas já fazem.
+   *
+   * A ressalva que existe está em `signatureTerms.ts`: a v2 dos Termos removeu
+   * o antigo consentimento de uso cadastral da selfie, porque ela é PROVA e a
+   * mesma imagem servindo a duas finalidades é prova mais fácil de contestar.
+   * Ela vale como aviso, não como impedimento: o uso aqui é interno, dentro do
+   * CRM do escritório que colheu a imagem, e a selfie continua fora de qualquer
+   * superfície pública — o validador segue recebendo apenas o booleano de que
+   * houve captura facial.
+   */
+  async listSignerSelfies(requestIds: string[]): Promise<Record<string, string>> {
+    const ids = Array.from(new Set(requestIds.filter(Boolean)));
+    if (ids.length === 0) return {};
+
+    const { data, error } = await supabase
+      .from(this.signersTable)
+      .select('signature_request_id, facial_image_path, signed_at')
+      .in('signature_request_id', ids)
+      .not('facial_image_path', 'is', null)
+      .order('signed_at', { ascending: false, nullsFirst: false });
+
+    if (error || !data || data.length === 0) return {};
+
+    type Linha = { signature_request_id: string; facial_image_path: string };
+    // Envelope com vários signatários: vale a selfie da assinatura mais
+    // recente, que é a primeira da ordenação acima.
+    const porRequest = new Map<string, string>();
+    for (const linha of data as Linha[]) {
+      if (porRequest.has(linha.signature_request_id)) continue;
+      porRequest.set(linha.signature_request_id, linha.facial_image_path);
+    }
+
+    const caminhos = Array.from(new Set(porRequest.values()));
+    // Uma ida ao storage para todas as fotos da tela, não uma por cartão.
+    const { data: urls, error: erroUrls } = await supabase.storage
+      .from(STORAGE_BUCKET)
+      .createSignedUrls(caminhos, 3600);
+    if (erroUrls || !urls) return {};
+
+    const urlPorCaminho = new Map<string, string>();
+    for (const item of urls) {
+      if (item.path && item.signedUrl) urlPorCaminho.set(item.path, item.signedUrl);
+    }
+
+    const avatares: Record<string, string> = {};
+    for (const [requestId, caminho] of porRequest) {
+      const url = urlPorCaminho.get(caminho);
+      if (url) avatares[requestId] = url;
+    }
+    return avatares;
+  }
+
   async listRequests(filters?: {
     status?: string;
     client_id?: string;
@@ -956,6 +1084,29 @@ class SignatureService {
   }
 
   /** Heartbeat de presença pelo PÚBLICO via RPC restrita por public_token. */
+  /**
+   * Carimba um degrau da assinatura no instante em que ele acontece.
+   *
+   * Até aqui os instantes por etapa só existiam para quem CONCLUÍA: eram todos
+   * enviados juntos, no payload da assinatura. Quem abria e desistia não
+   * deixava rastro de onde tinha parado — e é justamente essa pessoa que a
+   * tela precisa enxergar para saber o que fazer a respeito.
+   *
+   * Fail-soft de propósito: o carimbo é observação, não pré-requisito. Se ele
+   * falhar, a assinatura segue normalmente e o instante volta a ser gravado no
+   * envio, como sempre foi.
+   */
+  async marcarEtapaDaAssinatura(
+    token: string,
+    etapa: 'termos' | 'autenticacao' | 'documento' | 'selfie' | 'localizacao',
+  ): Promise<void> {
+    try {
+      await supabase.rpc('public_marcar_etapa_do_signatario', { p_token: token, p_etapa: etapa });
+    } catch (error) {
+      console.warn(`Não foi possível carimbar a etapa "${etapa}" da assinatura:`, error);
+    }
+  }
+
   async heartbeatSignerPresence(token: string): Promise<void> {
     try {
       await supabase.rpc('public_heartbeat_signer', { p_token: token });

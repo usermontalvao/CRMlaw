@@ -878,7 +878,12 @@ const PublicSigningPage: React.FC<PublicSigningPageProps> = ({ token }) => {
     // Desmarcar e marcar de novo vale o ÚLTIMO aceite: é ele que está em vigor
     // quando a assinatura é enviada.
     termsAcceptedAtRef.current = aceito ? agoraDoServidor().toISOString() : null;
-  }, [agoraDoServidor]);
+    // O degrau é carimbado no banco AGORA, e não só no envio da assinatura:
+    // é o que permite ao escritório ver onde a pessoa parou quando ela não
+    // conclui. O carimbo do banco só vale a primeira vez e nunca sobrescreve
+    // o instante probatório que vai no payload.
+    if (aceito) void signatureService.marcarEtapaDaAssinatura(token, 'termos');
+  }, [agoraDoServidor, token]);
   const [showTermsModal, setShowTermsModal] = useState(false);
   const [currentPage, setCurrentPage] = useState(1);
   const [totalPages] = useState(1); // TODO: detectar páginas do PDF
@@ -1711,6 +1716,7 @@ const PublicSigningPage: React.FC<PublicSigningPageProps> = ({ token }) => {
       const res = await signatureService.verifyEmailOtp({ token, code });
       setEmailOtpVerified(true);
       authAtRef.current = agoraDoServidor().toISOString(); // instante real, no relógio do servidor
+      void signatureService.marcarEtapaDaAssinatura(token, 'autenticacao');
       if (res.email) {
         setVerifiedEmail(res.email);
       }
@@ -2492,7 +2498,13 @@ const PublicSigningPage: React.FC<PublicSigningPageProps> = ({ token }) => {
 
           const url = await signatureService.getPublicFileUrl(token,data.request.document_path);
 
-          if (url) setPdfUrl(url);
+          if (url) {
+            setPdfUrl(url);
+            // O documento chegou ao navegador do signatário: este é o degrau
+            // "documento apresentado", que em 236 assinaturas nunca havia sido
+            // gravado uma única vez.
+            void signatureService.marcarEtapaDaAssinatura(token, 'documento');
+          }
         } catch (e) {
           console.warn('Não foi possível carregar preview do documento:', e);
         }
@@ -2986,6 +2998,7 @@ const PublicSigningPage: React.FC<PublicSigningPageProps> = ({ token }) => {
     setFacialValidation(null);
     setFacialData(imageData);
     facialCapturedAtRef.current = capturadaEm.toISOString(); // instante real da selfie
+    void signatureService.marcarEtapaDaAssinatura(token, 'selfie');
     stopCamera();
 
     const result = await validateFacialPhotoWithAI(paraAnalise);
@@ -3017,6 +3030,7 @@ const PublicSigningPage: React.FC<PublicSigningPageProps> = ({ token }) => {
           lng: position.coords.longitude,
         });
         geolocationCapturedAtRef.current = agoraDoServidor().toISOString(); // instante real, no relógio do servidor
+        void signatureService.marcarEtapaDaAssinatura(token, 'localizacao');
         setLocationLoading(false);
         setModalStep('facial');
       },
@@ -3488,6 +3502,7 @@ const PublicSigningPage: React.FC<PublicSigningPageProps> = ({ token }) => {
       const res = await signatureService.verifyPhoneOtp({ token, code });
       setPhoneOtpVerified(true);
       authAtRef.current = agoraDoServidor().toISOString(); // instante real, no relógio do servidor
+      void signatureService.marcarEtapaDaAssinatura(token, 'autenticacao');
       if (res.phone) {
         setSignerData((prev) => ({ ...prev, phone: res.phone || prev.phone }));
       }

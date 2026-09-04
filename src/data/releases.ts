@@ -37,6 +37,38 @@ export type ReleaseNote = {
 
 export const releases: ReleaseNote[] = [
   {
+    version: '1.22.18',
+    date: '03/09/2026',
+    summary: 'O painel da assinatura para de dizer "0%" e passa a contar até onde a pessoa chegou — e a cobrança automática deixa de ser muda.',
+    modules: [
+      {
+        moduleId: 'assinaturas',
+        changes: [
+          {
+            type: 'feature' as const,
+            title: 'A escada mostra em que degrau o cliente parou',
+            description: 'A barra de progresso só sabia dizer 0% ou 100%. Só que 0% era a mesma coisa para quem nunca abriu o link, para quem abriu e desistiu na primeira tela e para quem tirou a selfie e travou no último passo — três situações diferentes, com três conversas diferentes, todas chamadas de zero. Agora a página pública carimba cada etapa no instante em que ela acontece (termos, autenticação, documento, selfie, localização) e o painel mostra o caminho inteiro, degrau a degrau, com a hora de cada um. Quem já assinou aparece com todos os degraus cumpridos mesmo quando falta carimbo: os carimbos são recentes, e assinatura antiga não os tem — falta de registro não pode virar "pulou a etapa".',
+          },
+          {
+            type: 'improvement' as const,
+            title: 'O histórico vira uma história',
+            description: 'Numa pendência real do escritório o histórico deu dezesseis linhas idênticas ("abriu o documento para leitura"), que empurravam para fora da tela os dois lembretes já enviados e a única coisa que importava saber: a pessoa voltou dezesseis vezes e nunca passou da primeira etapa. As repetições agora viram uma linha só, que diz quantas foram e entre quando e quando. É dobra, não corte — os eventos originais continuam guardados e podem ser abertos, e o dossiê probatório segue com tudo.',
+          },
+          {
+            type: 'fix' as const,
+            title: 'A cobrança automática diz que está cobrando — e quando parou',
+            description: 'O CRM cobra sozinho quem abriu o documento e saiu sem assinar, de duas em duas horas. Funcionava, mas em silêncio: a tela nunca disse que tinha cobrado e, pior, nunca disse quando deixou de cobrar. E ela para com facilidade — basta a conversa de WhatsApp do cliente estar encerrada para o lembrete seguinte simplesmente não sair. Foi o que aconteceu com a única pendência viva do escritório: dezesseis aberturas, dois lembretes enviados e um terceiro que nunca sairia sem ninguém saber. O painel agora responde às três perguntas: está sendo cobrada? Se sim, quando é a próxima? Se não, por quê?',
+          },
+          {
+            type: 'improvement' as const,
+            title: 'O rosto de quem assina no cartão',
+            description: 'A lista mostrava o mesmo ícone de documento repetido, e nada distinguia um cartão do outro à distância. Cada cartão passa a trazer o rosto do signatário — no módulo de assinaturas, a selfie tirada na hora de assinar, porque aqui o rosto serve para reconhecer o ato — com um anel na cor do estado, que diz de longe se aquilo já terminou. Foto que não carrega cai nas iniciais, sem quadrado cinza no meio da lista.',
+          },
+        ],
+      },
+    ],
+  },
+  {
     version: '1.22.17',
     date: '03/09/2026',
     summary: 'A busca de mensagens do WhatsApp ficou 60 vezes mais rápida — de 4,5 segundos para 72 milissegundos.',

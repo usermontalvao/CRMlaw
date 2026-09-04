@@ -38,11 +38,15 @@ import { useSelectionState } from '../hooks/useSelectionState';
 import FacialCapture from './FacialCapture';
 import { filterGeneratedDocumentsByFolder, filterSignatureRequests, isGlobalSignatureSearch } from '../utils/signatureFilters';
 import { lerBuscaDeAssinatura } from '../utils/buscaDeAssinatura';
+import { comoDestravar, descreverParada, lerEstadoDaCobranca } from '../utils/cobrancaDeAssinatura';
+import { agruparLinhaDoTempo, descreverGrupo, type EventoDeAuditoria } from '../utils/linhaDoTempoDaAssinatura';
 import type {
   SignatureRequest, SignatureRequestWithSigners, Signer, CreateSignatureRequestDTO,
   SignerAuthMethod, SignatureFieldType, SignatureAuditLog, SignatureRequestDocument,
 } from '../types/signature.types';
 import SignatureCanvas from './SignatureCanvas';
+import { EscadaDeAssinatura, montarDegraus, ondeParou, FitaDeDegraus } from './EscadaDeAssinatura';
+import { AvatarDoSignatario } from './AvatarDoSignatario';
 import SignatureReport from './SignatureReport';
 import ForensicDossier from './ForensicDossier';
 import SignatureCertificateMockup from './SignatureCertificateMockup';
@@ -200,6 +204,24 @@ const SignatureModule: React.FC<SignatureModuleProps> = ({ prefillData, focusReq
   const showListSkeleton = useMinLoading(loading);
   const [signerRoles, setSignerRoles] = useState<string[]>(['Signatário','Contratante','Contratado','Testemunha','Fiador','Cônjuge','Representante Legal']);
   const [requests, setRequests] = useState<SignatureRequestWithSigners[]>([]);
+  // Quem tem conversa de WhatsApp aberta — é o que decide se o lembrete
+  // automático ainda sai. `null` enquanto não se sabe (ou se a consulta
+  // falhou): nesse caso a tela não acusa cobrança parada.
+  const [conversasAbertasPorCliente, setConversasAbertasPorCliente] = useState<Set<string> | null>(null);
+  /** Foto de perfil de cada cliente, para o avatar dos cartões. */
+  const [fotosPorCliente, setFotosPorCliente] = useState<Record<string, string>>({});
+  /**
+   * A selfie tirada na hora de assinar, por solicitação — o rosto dos cartões
+   * DESTE módulo.
+   *
+   * A regra do CRM: aqui vale a selfie da assinatura; nos demais módulos, a
+   * foto do contato no WhatsApp. O porquê está em `listSignerSelfies`. A foto
+   * de cadastro (`fotosPorCliente`) fica como segunda opção, para quem ainda
+   * não assinou e portanto não tem selfie.
+   */
+  const [selfiePorSolicitacao, setSelfiePorSolicitacao] = useState<Record<string, string>>({});
+  /** Grupos de eventos repetidos que a pessoa abriu na linha do tempo. */
+  const [gruposAbertos, setGruposAbertos] = useState<Set<string>>(new Set());
   const [generatedDocuments, setGeneratedDocuments] = useState<GeneratedDocument[]>([]);
   const [cloudSyncStatusByRequestId, setCloudSyncStatusByRequestId] = useState<Record<string, boolean>>({});
 
@@ -232,7 +254,15 @@ const SignatureModule: React.FC<SignatureModuleProps> = ({ prefillData, focusReq
   const [moveSelectedFolderId, setMoveSelectedFolderId] = useState<string | null>(null);
   const [moveSaving, setMoveSaving] = useState(false);
 
-  const [dragOverFolderId, setDragOverFolderId] = useState<string | null>(null);
+  /**
+   * A pasta sob o cursor durante um arraste.
+   *
+   * `undefined` = nenhuma; `null` = a Caixa de Entrada (a raiz, que não tem
+   * id). Os dois eram `null` — e como a raiz É `null`, ela acendia como alvo
+   * desde o primeiro pixel do arraste, com o cursor em qualquer lugar. Era
+   * por isso que soltar no ARQUIVO parecia sempre mirar na Caixa de Entrada.
+   */
+  const [dragOverFolderId, setDragOverFolderId] = useState<string | null | undefined>(undefined);
   const [isDraggingExplorer, setIsDraggingExplorer] = useState(false);
   const [draggingExplorer, setDraggingExplorer] = useState<null | {
     type: 'folder' | 'item';
@@ -255,12 +285,16 @@ const SignatureModule: React.FC<SignatureModuleProps> = ({ prefillData, focusReq
   const [filterDateFrom, setFilterDateFrom] = useState(''); // yyyy-mm-dd
   const [filterDateTo, setFilterDateTo] = useState(''); // yyyy-mm-dd
   const [sortOrder, setSortOrder] = useState<'newest' | 'oldest'>('newest');
+  // A lista é o padrão. A grade de cartões dava a 178 documentos já assinados o
+  // mesmo peso visual do único que espera alguém — um mural de 100% verdes onde
+  // a pendência se perde. Quem prefere a grade continua com ela: a escolha fica
+  // guardada e ganha do padrão.
   const [viewMode, setViewMode] = useState<'list' | 'grid'>(() => {
     try {
       const saved = typeof window !== 'undefined' ? window.localStorage.getItem('signature_view_mode') : null;
-      return saved === 'list' ? 'list' : 'grid';
+      return saved === 'grid' ? 'grid' : 'list';
     } catch {
-      return 'grid';
+      return 'list';
     }
   });
 
@@ -585,6 +619,89 @@ const SignatureModule: React.FC<SignatureModuleProps> = ({ prefillData, focusReq
   });
 
   useEffect(() => { void loadData(); }, [loadData]);
+
+  // Descobre quais clientes com pendência têm conversa aberta no WhatsApp. É a
+  // peça que falta para a tela dizer se o lembrete automático ainda sai: o robô
+  // só fala em conversa que não esteja encerrada, e é aí que ele emudece.
+  useEffect(() => {
+    const clientIds = requests
+      .filter((r) => r.status === 'pending')
+      .map((r) => r.client_id)
+      .filter((id): id is string => Boolean(id));
+
+    if (clientIds.length === 0) {
+      setConversasAbertasPorCliente(new Set());
+      return;
+    }
+
+    let ativo = true;
+    void signatureService
+      .listClientsWithOpenWhatsappConversation(clientIds)
+      .then((abertas) => { if (ativo) setConversasAbertasPorCliente(abertas); })
+      .catch(() => { if (ativo) setConversasAbertasPorCliente(null); });
+    return () => { ativo = false; };
+  }, [requests]);
+
+  // Os rostos dos cartões: a foto de cadastro do cliente e, quando a pessoa
+  // autorizou, a selfie que ela tirou para assinar.
+  useEffect(() => {
+    const clientIds = requests.map((r) => r.client_id).filter((id): id is string => Boolean(id));
+    if (requests.length === 0) return;
+
+    let ativo = true;
+    void signatureService.listClientPhotos(clientIds)
+      .then((fotos) => { if (ativo) setFotosPorCliente(fotos); })
+      .catch(() => { /* sem fotos: as iniciais dão conta */ });
+    void signatureService.listSignerSelfies(requests.map((r) => r.id))
+      .then((selfies) => { if (ativo) setSelfiePorSolicitacao(selfies); })
+      .catch(() => { /* idem */ });
+    return () => { ativo = false; };
+  }, [requests]);
+
+  // ── PRECISA DE VOCÊ ───────────────────────────────────────────────────────
+  // A lista trata os 179 documentos como iguais: o que já foi assinado e
+  // arquivado ocupa a mesma área do que está parado esperando alguém. Esta
+  // faixa separa as duas coisas — e, para cada pendência, diz o que o robô de
+  // lembretes está fazendo, ou por que não está fazendo nada.
+  const pendenciasVivas = useMemo(() => {
+    return requests
+      .filter((r) => r.status === 'pending' && !r.signers?.every((s: Signer) => s.status === 'signed'))
+      .map((req) => {
+        const pendentes = (req.signers ?? []).filter((s: Signer) => s.status !== 'signed' && !s.refused_at);
+        const maisRecente = (campo: 'last_seen_at' | 'opened_at' | 'viewed_at') =>
+          (req.signers ?? [])
+            .map((s: Signer) => s[campo])
+            .filter(Boolean)
+            .sort()
+            .pop() as string | undefined;
+
+        const ultimaPresencaEm = maisRecente('last_seen_at') ?? null;
+        const primeiraAberturaEm = maisRecente('opened_at') ?? maisRecente('viewed_at') ?? null;
+
+        const cobranca = lerEstadoDaCobranca({
+          criadaEm: req.created_at,
+          lembretesEnviados: req.wa_followup_count ?? 0,
+          ultimoLembreteEm: req.wa_followup_last_at ?? null,
+          ultimaPresencaEm,
+          primeiraAberturaEm,
+          temCliente: Boolean(req.client_id),
+          temConversaAberta: conversasAbertasPorCliente === null
+            ? null
+            : Boolean(req.client_id && conversasAbertasPorCliente.has(req.client_id)),
+          acompanhamentoEncerrado: Boolean(req.wa_tracking_stopped),
+          bloqueada: Boolean(req.blocked_at),
+        });
+
+        return {
+          req,
+          cobranca,
+          signatarioPendente: pendentes[0] ?? null,
+          visitouEm: ultimaPresencaEm ?? primeiraAberturaEm ?? null,
+        };
+      })
+      .sort((a, b) => new Date(a.req.created_at).getTime() - new Date(b.req.created_at).getTime());
+  }, [requests, conversasAbertasPorCliente]);
+
 
   useEffect(() => {
     settingsService.getSignatureModuleConfig().then(cfg => {
@@ -1217,7 +1334,7 @@ const SignatureModule: React.FC<SignatureModuleProps> = ({ prefillData, focusReq
       e.preventDefault();
       e.stopPropagation();
       setFolderReorderOver(null);
-      setDragOverFolderId(null);
+      setDragOverFolderId(undefined);
 
       const raw = e.dataTransfer.getData('application/json') || e.dataTransfer.getData('text/plain');
       if (!raw) return;
@@ -1400,7 +1517,7 @@ const SignatureModule: React.FC<SignatureModuleProps> = ({ prefillData, focusReq
 
   const handleDropOnFolder = useCallback(async (e: React.DragEvent, targetFolderId: string | null) => {
     e.preventDefault();
-    setDragOverFolderId(null);
+    setDragOverFolderId(undefined);
     setIsDraggingExplorer(false);
     setDraggingExplorer(null);
     setFolderReorderOver(null);
@@ -1477,14 +1594,14 @@ const SignatureModule: React.FC<SignatureModuleProps> = ({ prefillData, focusReq
     }
   };
 
-  const handleFolderDragEnter = useCallback((folderId: string | null) => {
+  const handleFolderDragEnter = useCallback((folderId: string | null | undefined) => {
     setDragOverFolderId(folderId);
   }, []);
 
-  const handleFolderDragLeave = useCallback((e: React.DragEvent, folderId: string | null) => {
+  const handleFolderDragLeave = useCallback((e: React.DragEvent, folderId: string | null | undefined) => {
     const related = (e as any).relatedTarget as Node | null | undefined;
     if (related && e.currentTarget && (e.currentTarget as any).contains?.(related)) return;
-    setDragOverFolderId((prev) => (prev === folderId ? null : prev));
+    setDragOverFolderId((prev) => (prev === folderId ? undefined : prev));
   }, []);
 
   const setExplorerDragData = (e: React.DragEvent, payload: any, sourceElement?: HTMLElement) => {
@@ -1589,7 +1706,7 @@ const SignatureModule: React.FC<SignatureModuleProps> = ({ prefillData, focusReq
       if (!next) {
         setIsDraggingExplorer(false);
         setDraggingExplorer(null);
-        setDragOverFolderId(null);
+        setDragOverFolderId(undefined);
         setFolderReorderOver(null);
       }
       return next;
@@ -3691,6 +3808,49 @@ const SignatureModule: React.FC<SignatureModuleProps> = ({ prefillData, focusReq
     month: 'short',
     year: 'numeric',
   });
+  /**
+   * Cobrar a assinatura à mão — o mesmo caminho do painel de detalhes, agora
+   * ao alcance de um clique na fila. É o conserto imediato para a pendência
+   * cuja cobrança automática travou: mandar a mensagem reabre a conversa, e
+   * com a conversa aberta o robô volta a cuidar da cadência sozinho.
+   */
+  const cobrarAssinatura = (req: SignatureRequestWithSigners, signer: Signer | null) => {
+    const alvo = signer ?? (req.signers ?? []).find((s: Signer) => s.status !== 'signed') ?? null;
+    const phone = String(alvo?.phone || '').replace(/\D/g, '');
+    if (!phone) {
+      toast.error('Este signatário não tem telefone cadastrado — abra o documento para copiar o link.');
+      return;
+    }
+    const token = alvo?.public_token || req.public_token;
+    if (!token) {
+      toast.error('O link de assinatura deste documento não está mais ativo.');
+      return;
+    }
+    const url = buildWaPreviewUrl('assinar', token);
+    const primeiroNome = String(alvo?.name || req.client_name || '').split(' ')[0];
+    const texto = `Olá${primeiroNome ? `, ${primeiroNome}` : ''}! Sua assinatura em *${req.document_name}* ainda está pendente. É rapidinho — é só abrir e assinar:\n\n${url}`;
+
+    if (openWhatsAppChat({
+      phone,
+      clientId: req.client_id ?? null,
+      contactName: alvo?.name ?? req.client_name ?? null,
+      text: texto,
+    })) return;
+    window.open(`https://wa.me/${phone}?text=${encodeURIComponent(texto)}`, '_blank');
+  };
+
+  /** "hoje às 10:51", "ontem às 18:00", "12 de ago." — para carimbos curtos. */
+  const quandoCurto = (iso: string): string => {
+    const d = new Date(iso);
+    const hoje = new Date();
+    const mesmoDia = (a: Date, b: Date) => a.toDateString() === b.toDateString();
+    const ontem = new Date(hoje.getTime() - 86400000);
+    const hora = d.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' });
+    if (mesmoDia(d, hoje)) return `hoje às ${hora}`;
+    if (mesmoDia(d, ontem)) return `ontem às ${hora}`;
+    return d.toLocaleDateString('pt-BR', { day: '2-digit', month: 'short' });
+  };
+
   const timeAgo = (d: string): string => {
     const diff = Date.now() - new Date(d).getTime();
     const mins = Math.floor(diff / 60000);
@@ -3795,11 +3955,16 @@ const SignatureModule: React.FC<SignatureModuleProps> = ({ prefillData, focusReq
   if (wizardStep !== 'list') {
     const canProceedUpload = selectedDocumentName || uploadedFile || selectedGenDocIds.length > 0;
     const canProceedSigners = signers.every((s) => (s.name ?? '').trim());
+    // TRÊS PASSOS, NÃO CINCO.
+    //
+    // "Posicionar" era etapa obrigatória para todo mundo, mas o rodapé assinado
+    // atende quase todos os kits — o designer de campos só faz falta quando o
+    // documento exige rubrica em página certa. Ele não sumiu: virou uma escolha
+    // dentro do envio, e abre inteiro, com tudo o que sempre teve.
     const steps = [
       { key: 'upload', label: 'Documento', icon: FileText },
-      { key: 'signers', label: 'Signatários', icon: Users },
-      { key: 'position', label: 'Posicionar', icon: MousePointer2 },
-      { key: 'settings', label: 'Configurações', icon: Filter },
+      { key: 'signers', label: 'Quem assina', icon: Users },
+      { key: 'settings', label: 'Enviar', icon: Send },
     ];
     const currentStepIndex = steps.findIndex(s => s.key === wizardStep);
     
@@ -3815,7 +3980,7 @@ const SignatureModule: React.FC<SignatureModuleProps> = ({ prefillData, focusReq
                 onClick={() => { 
                   if (wizardStep === 'upload') resetWizard(); 
                   else if (wizardStep === 'signers') setWizardStep('upload'); 
-                  else if (wizardStep === 'settings') setWizardStep('position'); 
+                  else if (wizardStep === 'settings') setWizardStep('signers'); 
                 }} 
                 className="flex items-center gap-1 text-sm text-slate-500 hover:text-slate-700"
               >
@@ -3866,7 +4031,7 @@ const SignatureModule: React.FC<SignatureModuleProps> = ({ prefillData, focusReq
                   type="button"
                   onClick={() => { 
                     if (wizardStep === 'upload' && canProceedUpload) setWizardStep('signers'); 
-                    else if (wizardStep === 'signers' && canProceedSigners) setWizardStep('position'); 
+                    else if (wizardStep === 'signers' && canProceedSigners) setWizardStep('settings'); 
                   }} 
                   disabled={(wizardStep === 'upload' && !canProceedUpload) || (wizardStep === 'signers' && !canProceedSigners) || wizardLoading} 
                   className="flex items-center gap-2 px-4 py-2 bg-slate-900 text-white rounded-lg font-medium hover:bg-slate-800 disabled:opacity-40 disabled:cursor-not-allowed"
@@ -4659,22 +4824,160 @@ const SignatureModule: React.FC<SignatureModuleProps> = ({ prefillData, focusReq
           </div>
         )}
 
-        {wizardStep === 'settings' && (
-          <div className="max-w-xl mx-auto p-6"><div className="bg-[#f8f7f5] rounded-xl border border-[#e7e5df] p-6"><h3 className="text-lg font-semibold mb-6">Configurações</h3><div className="space-y-4">
-            <div><label className="block text-sm font-medium mb-2">Método de autenticação</label><select value={settings.authMethod} onChange={(e) => setSettings((s) => ({ ...s, authMethod: e.target.value as SignerAuthMethod }))} className="w-full px-3 py-2 border border-[#e7e5df] rounded-lg text-sm">{availableAuthMethods.map(opt => <option key={opt.value} value={opt.value}>{opt.label}</option>)}</select></div>
-            <div className="space-y-3 pt-4 border-t">
-              {[{ key: 'requireCpf', label: 'Exigir CPF do cliente', hint: 'O CPF informado na assinatura deve conferir com o CPF cadastrado do signatário.' }, { key: 'allowRefusal', label: 'Permitir recusa' }, { key: 'blockAfterDeadline', label: 'Bloquear após prazo' }].map(({ key, label, hint }) => <label key={key} className="flex items-center justify-between gap-3"><span className="text-sm">{label}{hint && <span className="block text-xs text-slate-400 font-normal">{hint}</span>}</span><button type="button" onClick={() => setSettings((s) => ({ ...s, [key]: !(s as any)[key] }))} className={`shrink-0 w-10 h-6 rounded-full ${(settings as any)[key] ? 'bg-orange-600' : 'bg-slate-300'}`}><div className={`w-4 h-4 bg-[#f8f7f5] rounded-full shadow transform ${(settings as any)[key] ? 'translate-x-5' : 'translate-x-1'}`} /></button></label>)}
+        {wizardStep === 'settings' && (() => {
+          // O ÚLTIMO PASSO MOSTRA O QUE VAI ACONTECER.
+          //
+          // Antes ele se chamava "Configurações" e abria com uma caixa de
+          // seleção de método de autenticação — a decisão mais técnica da tela
+          // primeiro, e nenhuma palavra sobre o que estava prestes a ser
+          // enviado, para quem, e com que consequência. Agora as decisões vêm
+          // com o padrão à vista, o que raramente muda fica recolhido, e o
+          // resumo do lado direito responde "é isto mesmo?" antes do clique.
+          const campos = fields.length;
+          const nomeDoMetodo = availableAuthMethods.find((m) => m.value === settings.authMethod)?.label ?? 'Assinatura';
+          const nomeDoDocumento = uploadedFiles.length > 1
+            ? `${uploadedFiles.length} arquivos`
+            : (selectedDocumentName || uploadedFiles[0]?.name || uploadedFile?.name || 'Documento');
+          const primeiroSignatario = signers[0]?.name?.trim() || 'signatário sem nome';
+
+          return (
+          <div className="max-w-4xl mx-auto p-6 grid grid-cols-1 lg:grid-cols-[1fr_280px] gap-5 items-start">
+
+            <div className="flex flex-col gap-3">
+
+              {/* Onde a assinatura entra */}
+              <div className="rounded-xl border border-[#e7e5df] bg-white p-4">
+                <p className="text-sm font-semibold text-slate-900">Onde a assinatura entra no documento</p>
+                <p className="mt-1 text-xs text-slate-500 max-w-[52ch]">
+                  O rodapé assinado atende quase todos os kits. Abra o posicionador quando o documento
+                  exigir a rubrica em uma página específica.
+                </p>
+                <div className="mt-3 flex items-center justify-between gap-3 rounded-lg border border-[#e7e5df] bg-[#f8f7f5] px-3 py-2">
+                  <span className="text-xs text-slate-600">
+                    {campos > 0
+                      ? <><b className="font-semibold text-slate-900">{campos} {campos === 1 ? 'campo posicionado' : 'campos posicionados'}</b> na página</>
+                      : <><b className="font-semibold text-slate-900">No rodapé de cada página</b> — padrão</>}
+                  </span>
+                  <button
+                    type="button"
+                    onClick={() => setWizardStep('position')}
+                    className="flex-shrink-0 inline-flex items-center gap-1.5 rounded-lg border border-[#e7e5df] bg-white px-2.5 py-1.5 text-[11px] font-semibold text-orange-700 transition hover:bg-orange-50"
+                  >
+                    <MousePointer2 className="w-3 h-3" />
+                    {campos > 0 ? 'Rever posições' : 'Posicionar na página'}
+                  </button>
+                </div>
+              </div>
+
+              {/* Como o cliente prova que é ele */}
+              <div className="rounded-xl border border-[#e7e5df] bg-white p-4">
+                <label className="block text-sm font-semibold text-slate-900">Como o cliente prova que é ele</label>
+                <select
+                  value={settings.authMethod}
+                  onChange={(e) => setSettings((s) => ({ ...s, authMethod: e.target.value as SignerAuthMethod }))}
+                  className="mt-2 w-full rounded-lg border border-[#e7e5df] bg-white px-3 py-2 text-sm"
+                >
+                  {availableAuthMethods.map((opt) => <option key={opt.value} value={opt.value}>{opt.label}</option>)}
+                </select>
+              </div>
+
+              {/* Cobrança automática — informativa: quem manda é a Edge Function */}
+              <div className="rounded-xl border border-[#e7e5df] bg-white p-4">
+                <p className="text-sm font-semibold text-slate-900">Cobrança automática</p>
+                <p className="mt-1 text-xs text-slate-500 max-w-[56ch]">
+                  Se o cliente abrir e sair sem assinar, o CRM lembra por WhatsApp em 4 horas, no dia
+                  seguinte, e depois em 3, 7 e 14 dias — sempre dentro do expediente do canal, e parando
+                  sozinho se ele disser que não quer. Precisa de cliente vinculado e conversa aberta.
+                </p>
+              </div>
+
+              {/* O que raramente muda */}
+              <details className="rounded-xl border border-[#e7e5df] bg-white p-4 group">
+                <summary className="cursor-pointer list-none text-sm font-semibold text-slate-900 flex items-center justify-between gap-3">
+                  Exigências e prazo
+                  <span className="text-[11px] font-normal text-slate-400">
+                    {[settings.requireCpf ? 'CPF' : null, settings.allowRefusal ? 'recusa' : null, settings.blockAfterDeadline ? 'prazo' : null]
+                      .filter(Boolean).join(' · ') || 'nos padrões'}
+                  </span>
+                </summary>
+                <div className="mt-4 space-y-3">
+                  {[
+                    { key: 'requireCpf', label: 'Exigir CPF do cliente', hint: 'O CPF informado na assinatura deve conferir com o CPF cadastrado do signatário.' },
+                    { key: 'allowRefusal', label: 'Permitir recusa', hint: 'O cliente pode recusar, com motivo, em vez de simplesmente abandonar.' },
+                    { key: 'blockAfterDeadline', label: 'Bloquear após prazo', hint: null as string | null },
+                  ].map(({ key, label, hint }) => (
+                    <label key={key} className="flex items-center justify-between gap-3">
+                      <span className="text-sm text-slate-700">
+                        {label}
+                        {hint && <span className="block text-xs text-slate-400 font-normal">{hint}</span>}
+                      </span>
+                      <button
+                        type="button"
+                        onClick={() => setSettings((s) => ({ ...s, [key]: !(s as any)[key] }))}
+                        className={`shrink-0 w-10 h-6 rounded-full transition ${(settings as any)[key] ? 'bg-orange-600' : 'bg-slate-300'}`}
+                      >
+                        <div className={`w-4 h-4 bg-white rounded-full shadow transform transition ${(settings as any)[key] ? 'translate-x-5' : 'translate-x-1'}`} />
+                      </button>
+                    </label>
+                  ))}
+                  {settings.blockAfterDeadline && (
+                    <div className="pt-1">
+                      <label className="block text-sm font-medium mb-2 text-slate-700">Data limite</label>
+                      <input
+                        type="date"
+                        value={settings.expiresAt}
+                        onChange={(e) => setSettings((s) => ({ ...s, expiresAt: e.target.value }))}
+                        className="w-full rounded-lg border border-[#e7e5df] px-3 py-2 text-sm"
+                      />
+                    </div>
+                  )}
+                  <div className="pt-3 border-t border-[#f1f5f9]">
+                    <button
+                      type="button"
+                      onClick={handleOpenFooterMockup}
+                      disabled={footerMockupLoading}
+                      className="inline-flex items-center gap-2 rounded-lg border border-[#e7e5df] bg-white px-3 py-2 text-xs font-medium text-slate-700 transition hover:bg-slate-50 disabled:opacity-60"
+                    >
+                      {footerMockupLoading ? <Loader2 className="w-4 h-4 animate-spin" /> : <Eye className="w-4 h-4" />}
+                      Ver como fica o certificado
+                    </button>
+                  </div>
+                </div>
+              </details>
             </div>
-            {settings.blockAfterDeadline && <div className="pt-4"><label className="block text-sm font-medium mb-2">Data limite</label><input type="date" value={settings.expiresAt} onChange={(e) => setSettings((s) => ({ ...s, expiresAt: e.target.value }))} className="w-full px-3 py-2 border border-[#e7e5df] rounded-lg text-sm" /></div>}
-            <div className="pt-4 border-t">
-              <button type="button" onClick={handleOpenFooterMockup} disabled={footerMockupLoading} className="inline-flex items-center gap-2 rounded-lg border border-[#e7e5df] bg-white px-3 py-2 text-sm font-medium text-slate-700 transition hover:bg-slate-50 disabled:opacity-60">
-                {footerMockupLoading ? <Loader2 className="w-4 h-4 animate-spin" /> : <Eye className="w-4 h-4" />}
-                Ver mockup do certificado
-              </button>
-              <p className="mt-2 text-xs text-slate-500">Abre uma prévia visual das páginas finais do certificado sem precisar assinar nem gerar PDF.</p>
+
+            {/* Antes de enviar */}
+            <div className="rounded-xl border border-[#e7e5df] bg-[#f8f7f5] p-4 lg:sticky lg:top-24">
+              <p className="text-[10px] font-bold uppercase tracking-wider text-slate-400 mb-3">Antes de enviar</p>
+              <dl className="grid grid-cols-[auto_1fr] gap-x-3 gap-y-2 text-xs">
+                <dt className="text-slate-400">Documento</dt>
+                <dd className="m-0 text-right font-medium text-slate-800 truncate" title={nomeDoDocumento}>{nomeDoDocumento}</dd>
+                <dt className="text-slate-400">{signers.length === 1 ? 'Assina' : 'Assinam'}</dt>
+                <dd className="m-0 text-right font-medium text-slate-800 truncate" title={signers.map((sg) => sg.name).join(', ')}>
+                  {signers.length === 1 ? primeiroSignatario : `${signers.length} pessoas`}
+                </dd>
+                <dt className="text-slate-400">Ordem</dt>
+                <dd className="m-0 text-right font-medium text-slate-800">{signerOrder === 'sequential' ? 'um após o outro' : 'qualquer um'}</dd>
+                <dt className="text-slate-400">Identidade</dt>
+                <dd className="m-0 text-right font-medium text-slate-800 truncate" title={nomeDoMetodo}>{nomeDoMetodo}</dd>
+                <dt className="text-slate-400">Assinatura</dt>
+                <dd className="m-0 text-right font-medium text-slate-800">{campos > 0 ? `${campos} na página` : 'no rodapé'}</dd>
+                <dt className="text-slate-400">Prazo</dt>
+                <dd className="m-0 text-right font-medium text-slate-800">
+                  {settings.blockAfterDeadline && settings.expiresAt
+                    ? new Date(`${settings.expiresAt}T12:00:00`).toLocaleDateString('pt-BR')
+                    : 'sem prazo'}
+                </dd>
+                <dt className="text-slate-400">Cobrança</dt>
+                <dd className="m-0 text-right font-medium text-slate-800">até 5 lembretes</dd>
+              </dl>
+              <p className="mt-3 pt-3 border-t border-[#e7e5df] text-[11px] text-slate-400">
+                “Criar sem enviar” gera os links e não dispara nada — você manda quando quiser.
+              </p>
             </div>
-          </div></div></div>
-        )}
+          </div>
+          );
+        })()}
     </div>
     );
   }
@@ -4692,6 +4995,8 @@ const SignatureModule: React.FC<SignatureModuleProps> = ({ prefillData, focusReq
     return r.status === 'pending' && !isExp;
   }).length;
   const signedRequestsCount = requests.filter((r) => r.status === 'signed').length;
+
+  const pendenciasSemCobranca = pendenciasVivas.filter((p) => p.cobranca.parada).length;
 
   return (
     <div className="@container flex flex-col gap-3 max-w-full overflow-x-hidden h-[calc(100vh-96px)] overflow-hidden" style={{ background: 'transparent' }} data-signature-module>
@@ -4733,82 +5038,6 @@ const SignatureModule: React.FC<SignatureModuleProps> = ({ prefillData, focusReq
       <div className="flex flex-1 min-h-0 gap-4">
 
         <div className="flex-1 min-h-0 overflow-y-auto space-y-3">
-          {/* Pastas — abas lado a lado (mesmo estilo das abas de status). Arrastar documento -> aba move. */}
-          <div
-            className={`sticky top-0 z-20 flex items-center justify-between gap-3 rounded-xl bg-[#f8f7f5]/95 px-2 py-1.5 backdrop-blur-md transition-shadow ${
-              isDraggingExplorer && draggingExplorer?.type === 'item' ? 'shadow-lg' : ''
-            }`}
-            style={{
-              border: '1px solid #e2e8f0',
-              boxShadow: isDraggingExplorer && draggingExplorer?.type === 'item'
-                ? '0 14px 30px rgba(15,23,42,0.14), 0 2px 8px rgba(15,23,42,0.08)'
-                : '0 4px 12px rgba(15,23,42,0.08)',
-            }}
-          >
-            <div className="flex items-center gap-1 overflow-x-auto scrollbar-hide min-w-0 py-0.5">
-              {[{ id: null as string | null, label: 'Caixa de Entrada', count: rootItemCount, parentId: null as string | null }]
-                .concat(orderedFolders.map((f) => ({ id: f.id, label: f.name, count: folderItemCountById.get(f.id) ?? 0, parentId: f.parent_id ?? null })))
-                .map((tab) => {
-                  const isSel = selectedFolderId === tab.id;
-                  const isDropOver = isDraggingExplorer && draggingExplorer?.type === 'item' && dragOverFolderId === tab.id;
-                  return (
-                    <button
-                      key={tab.id ?? '__root__'}
-                      type="button"
-                      draggable={folderReorderMode && tab.id != null}
-                      onClick={() => setSelectedFolderId(tab.id)}
-                      onDragStart={(e) => {
-                        if (!folderReorderMode || tab.id == null) return;
-                        setExplorerDragData(e, { type: 'folder', id: tab.id }, e.currentTarget as HTMLElement);
-                      }}
-                      onDragEnd={() => { setIsDraggingExplorer(false); setDragOverFolderId(null); setDraggingExplorer(null); }}
-                      onDragOver={(e) => {
-                        if (draggingExplorer?.type === 'item') { handleAllowDrop(e); setDragOverFolderId(tab.id); }
-                        else if (folderReorderMode && draggingExplorer?.type === 'folder') { handleAllowDrop(e); }
-                      }}
-                      onDragLeave={(e) => { if (draggingExplorer?.type === 'item') handleFolderDragLeave(e, tab.id); }}
-                      onDrop={(e) => {
-                        if (draggingExplorer?.type === 'item') { void handleDropOnFolder(e, tab.id); }
-                        else if (folderReorderMode && draggingExplorer?.type === 'folder' && tab.id != null) { void handleReorderFolderDrop(e, tab.parentId, tab.id); }
-                      }}
-                      title={tab.id ? (folderPathLabelById.get(tab.id) || tab.label) : 'Caixa de Entrada'}
-                      className={`group shrink-0 inline-flex items-center gap-1.5 whitespace-nowrap rounded-lg px-3 py-1.5 text-xs font-medium transition ${
-                        isSel ? 'bg-slate-900 text-white' : 'text-slate-600 hover:bg-slate-100'
-                      } ${isDropOver ? 'ring-2 ring-orange-400 ring-offset-1 ring-offset-[#f8f7f5]' : ''} ${
-                        folderReorderMode && tab.id != null ? 'cursor-grab active:cursor-grabbing' : ''
-                      }`}
-                    >
-                      {tab.id === null
-                        ? <Inbox className={`w-3.5 h-3.5 ${isSel ? 'text-white' : 'text-slate-400'}`} />
-                        : <FolderOpen className={`w-3.5 h-3.5 ${isSel ? 'text-white' : 'text-slate-400'}`} />}
-                      <span className="max-w-[180px] truncate">{tab.label}</span>
-                      <span className={`tabular-nums ${isSel ? 'text-slate-300' : 'text-slate-400'}`}>{tab.count}</span>
-                    </button>
-                  );
-                })}
-            </div>
-            <div className="flex items-center gap-1 flex-shrink-0">
-              <button
-                type="button"
-                onClick={toggleFolderReorder}
-                className={`inline-flex items-center gap-1.5 rounded-lg px-2 py-1 text-xs font-medium transition ${folderReorderMode ? 'bg-orange-50 text-orange-700 ring-1 ring-orange-500/20' : 'text-slate-500 hover:bg-slate-100 hover:text-slate-700'}`}
-                title={folderReorderMode ? 'Sair do modo de organização' : 'Organizar pastas'}
-              >
-                <ArrowUpDown className="w-3.5 h-3.5" />
-                <span className="hidden @sm:inline">Organizar</span>
-              </button>
-              <button
-                type="button"
-                onClick={() => openCreateFolderModal(selectedFolderId)}
-                className="inline-flex items-center gap-1.5 rounded-lg px-2 py-1 text-xs font-medium text-slate-500 hover:bg-slate-100 hover:text-slate-700 transition"
-                title="Nova pasta"
-              >
-                <Plus className="w-3.5 h-3.5" />
-                <span className="hidden @sm:inline">Nova pasta</span>
-              </button>
-            </div>
-          </div>
-
           {/* A busca atravessa as pastas — avisa que a caixa aberta deixou de limitar a lista */}
           {isGlobalSearch && (
             <div className="flex items-center justify-between gap-3 rounded-xl border border-orange-200 bg-orange-50 px-3 py-2">
@@ -4829,51 +5058,166 @@ const SignatureModule: React.FC<SignatureModuleProps> = ({ prefillData, focusReq
             </div>
           )}
 
-          {/* Toolbar */}
-          <div className="rounded-xl bg-[#f8f7f5] overflow-hidden" style={{ border: '1px solid #e2e8f0', boxShadow: '0 1px 3px rgba(15,23,42,0.05)' }}>
+          {/* Toolbar — FLUTUANTE.
+              As pastas moram aqui dentro, e é nelas que se solta um documento
+              arrastado. Quando a barra rolava junto com a lista, arrastar um
+              item lá de baixo era impossível: a pasta de destino já tinha saído
+              da tela e não há como segurar o arraste e rolar ao mesmo tempo.
+              Grudada no topo, a Caixa de Entrada e o ARQUIVO estão sempre à
+              vista, a qualquer altura da lista. */}
+          <div
+            className="sticky top-0 z-20 rounded-xl bg-[#f8f7f5]/95 backdrop-blur-md overflow-hidden transition-shadow"
+            style={{
+              border: '1px solid #e7e5df',
+              boxShadow: isDraggingExplorer && draggingExplorer?.type === 'item'
+                ? '0 14px 30px rgba(15,23,42,0.14), 0 2px 8px rgba(15,23,42,0.08)'
+                : '0 1px 3px rgba(15,23,42,0.05)',
+            }}
+          >
 
-            {/* Row 1: tabs + ações primárias */}
-            <div className="flex items-center justify-between gap-3 px-4 py-2.5" style={{ borderBottom: '1px solid #f1f5f9' }}>
-              {/* Tabs de status */}
-              <div className="flex items-center gap-0.5 overflow-x-auto">
+            {/* Row 1: o estado do compromisso — quem está esperando quem.
+                As abas de antes ("Todos / Pendentes / Assinados") tratavam três
+                coisas muito diferentes como três filtros iguais e do mesmo
+                tamanho. A pergunta que organiza a tela agora é uma só: o que
+                está esperando alguém? Por isso o que espera vem primeiro, e em
+                âmbar; o que já terminou é paisagem. */}
+            <div className="flex items-center gap-3 px-4 py-2.5 flex-wrap @2xl:flex-nowrap" style={{ borderBottom: '1px solid #f1f5f9' }}>
+              <div className="flex items-center gap-1.5 overflow-x-auto flex-shrink-0">
                 {[
-                  { key: 'all',     label: 'Todos',      count: requests.length,                                     countCls: 'text-slate-400' },
-                  { key: 'pending', label: 'Pendentes',  count: requests.filter(r => r.status === 'pending').length, countCls: 'text-amber-500' },
-                  { key: 'signed',  label: 'Assinados',  count: requests.filter(r => r.status === 'signed').length,  countCls: 'text-emerald-600' },
-                  ...(expiredRequestsCount > 0 ? [{ key: 'expired', label: 'Expirados', count: expiredRequestsCount, countCls: 'text-red-500' }] : []),
-                ].map(tab => (
-                  <button
-                    key={tab.key}
-                    type="button"
-                    onClick={() => setFilterStatus(tab.key as any)}
-                    className={`shrink-0 whitespace-nowrap rounded-lg px-3 py-1.5 text-xs font-medium transition-colors ${
-                      filterStatus === tab.key
-                        ? 'bg-slate-900 text-white'
-                        : 'text-slate-500 hover:text-slate-800 hover:bg-slate-100'
+                  {
+                    key: 'pending',
+                    label: pendenciasVivas.length === 1 ? 'esperando o cliente' : 'esperando o cliente',
+                    count: pendingRequestsCount,
+                    tom: 'espera' as const,
+                  },
+                  { key: 'signed', label: 'assinadas', count: signedRequestsCount, tom: 'pronto' as const },
+                  ...(expiredRequestsCount > 0
+                    ? [{ key: 'expired', label: 'com prazo vencido', count: expiredRequestsCount, tom: 'alerta' as const }]
+                    : []),
+                  { key: 'all', label: 'no acervo', count: totalRequestsCount, tom: 'neutro' as const },
+                ].map((estado) => {
+                  const ativo = filterStatus === estado.key;
+                  const cor = estado.tom === 'espera'
+                    ? { on: 'border-amber-300 bg-amber-50', n: 'text-amber-700', t: 'text-amber-800' }
+                    : estado.tom === 'pronto'
+                      ? { on: 'border-emerald-300 bg-emerald-50', n: 'text-emerald-700', t: 'text-emerald-800' }
+                      : estado.tom === 'alerta'
+                        ? { on: 'border-red-300 bg-red-50', n: 'text-red-700', t: 'text-red-800' }
+                        : { on: 'border-slate-300 bg-white', n: 'text-slate-900', t: 'text-slate-600' };
+                  return (
+                    <button
+                      key={estado.key}
+                      type="button"
+                      onClick={() => setFilterStatus(estado.key as any)}
+                      className={`shrink-0 inline-flex items-baseline gap-1.5 rounded-lg border px-3 py-1.5 transition ${
+                        ativo ? cor.on : 'border-[#e7e5df] bg-white hover:border-slate-300'
+                      }`}
+                    >
+                      <span className={`text-[13px] font-bold leading-none tabular-nums ${ativo ? cor.n : 'text-slate-900'}`}>
+                        {estado.count}
+                      </span>
+                      <span className={`text-[11.5px] font-medium whitespace-nowrap ${ativo ? cor.t : 'text-slate-500'}`}>
+                        {estado.label}
+                      </span>
+                    </button>
+                  );
+                })}
+              </div>
+
+              <div className="w-px h-7 bg-[#e7e5df] flex-shrink-0 hidden @2xl:block" />
+
+              {/* Pastas — no mesmo trilho dos estados, à direita. Elas
+                      respondem a outra pergunta ("onde isto está guardado?") e por
+                      isso vêm depois, mais leves; continuam aceitando documento
+                      arrastado, reordenação e menu. */}
+                  <div
+                    className={`flex items-center gap-2 min-w-0 rounded-lg transition ${
+                      isDraggingExplorer && draggingExplorer?.type === 'item' ? 'ring-2 ring-orange-300 ring-offset-2 ring-offset-[#f8f7f5]' : ''
                     }`}
                   >
-                    {tab.label} <span className={filterStatus === tab.key ? 'text-slate-300' : tab.countCls}>{tab.count}</span>
+                <div className={`flex items-center overflow-x-auto scrollbar-hide min-w-0 py-0.5 transition-all ${
+                  isDraggingExplorer && draggingExplorer?.type === 'item' ? 'gap-3' : 'gap-1'
+                }`}>
+                  {[{ id: null as string | null, label: 'Caixa de Entrada', count: rootItemCount, parentId: null as string | null }]
+                    .concat(orderedFolders.map((f) => ({ id: f.id, label: f.name, count: folderItemCountById.get(f.id) ?? 0, parentId: f.parent_id ?? null })))
+                    .map((tab) => {
+                      const isSel = selectedFolderId === tab.id;
+                      const arrastandoItem = isDraggingExplorer && draggingExplorer?.type === 'item';
+                      // `undefined` nunca é igual a `tab.id`: nada acende
+                      // enquanto o cursor não está sobre uma pasta de verdade.
+                      const isDropOver = arrastandoItem && dragOverFolderId !== undefined && dragOverFolderId === tab.id;
+                      return (
+                        <button
+                          key={tab.id ?? '__root__'}
+                          type="button"
+                          draggable={folderReorderMode && tab.id != null}
+                          onClick={() => setSelectedFolderId(tab.id)}
+                          onDragStart={(e) => {
+                            if (!folderReorderMode || tab.id == null) return;
+                            setExplorerDragData(e, { type: 'folder', id: tab.id }, e.currentTarget as HTMLElement);
+                          }}
+                          onDragEnd={() => { setIsDraggingExplorer(false); setDragOverFolderId(undefined); setDraggingExplorer(null); }}
+                          onDragOver={(e) => {
+                            if (draggingExplorer?.type === 'item') { handleAllowDrop(e); setDragOverFolderId(tab.id); }
+                            else if (folderReorderMode && draggingExplorer?.type === 'folder') { handleAllowDrop(e); }
+                          }}
+                          onDragLeave={(e) => { if (draggingExplorer?.type === 'item') handleFolderDragLeave(e, tab.id); }}
+                          onDrop={(e) => {
+                            if (draggingExplorer?.type === 'item') { void handleDropOnFolder(e, tab.id); }
+                            else if (folderReorderMode && draggingExplorer?.type === 'folder' && tab.id != null) { void handleReorderFolderDrop(e, tab.parentId, tab.id); }
+                          }}
+                          title={tab.id ? (folderPathLabelById.get(tab.id) || tab.label) : 'Caixa de Entrada'}
+                          className={`group shrink-0 inline-flex items-center gap-1.5 whitespace-nowrap rounded-lg px-3 py-1.5 text-xs font-medium transition-all ${
+                            isDropOver
+                              // O alvo é um só, e não deixa dúvida: laranja
+                              // cheio, um degrau maior que as outras caixas.
+                              ? 'bg-orange-500 text-white shadow-md scale-105'
+                              : arrastandoItem
+                                // Durante o arraste, cada pasta vira uma caixa
+                                // com contorno próprio, e o vão entre elas
+                                // cresce: a mira acerta uma de cada vez.
+                                ? 'bg-white/60 text-slate-500 border border-dashed border-[#cfcabb]'
+                                : isSel
+                                  ? 'bg-white text-slate-900 ring-1 ring-[#e7e5df] shadow-sm'
+                                  : 'text-slate-500 hover:bg-white/70 hover:text-slate-800'
+                          } ${
+                            folderReorderMode && tab.id != null ? 'cursor-grab active:cursor-grabbing' : ''
+                          }`}
+                        >
+                          {tab.id === null
+                            ? <Inbox className={`w-3.5 h-3.5 ${isDropOver ? 'text-white' : isSel ? 'text-slate-500' : 'text-slate-400'}`} />
+                            : <FolderOpen className={`w-3.5 h-3.5 ${isDropOver ? 'text-white' : isSel ? 'text-slate-500' : 'text-slate-400'}`} />}
+                          <span className="max-w-[180px] truncate">{tab.label}</span>
+                          <span className={`tabular-nums ${isDropOver ? 'text-orange-100' : 'text-slate-400'}`}>{tab.count}</span>
+                        </button>
+                      );
+                    })}
+                </div>
+                <div className="flex items-center gap-1 flex-shrink-0">
+                  <button
+                    type="button"
+                    onClick={toggleFolderReorder}
+                    className={`inline-flex items-center gap-1.5 rounded-lg px-2 py-1 text-xs font-medium transition ${folderReorderMode ? 'bg-orange-50 text-orange-700 ring-1 ring-orange-500/20' : 'text-slate-500 hover:bg-slate-100 hover:text-slate-700'}`}
+                    title={folderReorderMode ? 'Sair do modo de organização' : 'Organizar pastas'}
+                  >
+                    <ArrowUpDown className="w-3.5 h-3.5" />
+                    <span className="hidden @sm:inline">Organizar</span>
                   </button>
-                ))}
-                <div className="w-px h-4 bg-slate-200 mx-1.5 flex-shrink-0" />
-                <span className="shrink-0 whitespace-nowrap px-3 py-1.5 text-xs text-slate-400">
-                  Assinantes <span className="text-slate-600 font-medium">{requests.reduce((acc, r) => acc + (r.signers?.length || 0), 0)}</span>
-                </span>
+                  <button
+                    type="button"
+                    onClick={() => openCreateFolderModal(selectedFolderId)}
+                    className="inline-flex items-center gap-1.5 rounded-lg px-2 py-1 text-xs font-medium text-slate-500 hover:bg-slate-100 hover:text-slate-700 transition"
+                    title="Nova pasta"
+                  >
+                    <Plus className="w-3.5 h-3.5" />
+                    <span className="hidden @sm:inline">Nova pasta</span>
+                  </button>
+                </div>
               </div>
 
-              {/* Ações primárias */}
-              <div className="flex items-center gap-2 flex-shrink-0">
-                <button
-                  onClick={() => { resetWizard(); setWizardStep('upload'); }}
-                  className="inline-flex items-center gap-1.5 rounded-lg bg-orange-500 hover:bg-orange-600 px-3 py-1.5 text-xs font-semibold text-white transition"
-                >
-                  <Plus className="w-3.5 h-3.5" />
-                  Novo documento
-                </button>
-              </div>
             </div>
 
-            {/* Row 2: busca + utilitários */}
+            {/* Row 2: achar e agir */}
             <div className="flex items-center gap-2 px-4 py-2">
               {/* Busca */}
               <div className="relative flex-1 min-w-0">
@@ -4960,6 +5304,16 @@ const SignatureModule: React.FC<SignatureModuleProps> = ({ prefillData, focusReq
               >
                 <Trash2 className="w-3.5 h-3.5" />
                 Excluídas
+              </button>
+
+              {/* Criar é a única ação primária da barra — fica sozinha na
+                  ponta, depois de tudo que serve para achar. */}
+              <button
+                onClick={() => { resetWizard(); setWizardStep('upload'); }}
+                className="ml-auto flex-shrink-0 inline-flex items-center gap-1.5 rounded-lg bg-orange-500 hover:bg-orange-600 px-3.5 py-1.5 text-xs font-semibold text-white transition"
+              >
+                <Plus className="w-3.5 h-3.5" />
+                Nova assinatura
               </button>
             </div>
           </div>
@@ -5123,6 +5477,92 @@ const SignatureModule: React.FC<SignatureModuleProps> = ({ prefillData, focusReq
           </div>
         )}
 
+          {/* ── PRECISA DE VOCÊ ──────────────────────────────────────────
+              O que está parado esperando alguém sai da paisagem de cartões
+              verdes e vem para cima, com o estado da cobrança automática à
+              vista — inclusive quando ela travou. Some durante a busca, que
+              tem outra intenção. */}
+          {pendenciasVivas.length > 0 && !isGlobalSearch && !searchTerm.trim() && (filterStatus === 'all' || filterStatus === 'pending') && (
+            <div className="rounded-2xl bg-white overflow-hidden" style={{ border: '1px solid #e7e5df', boxShadow: '0 1px 4px rgba(15,23,42,0.05)' }}>
+              <div className="flex items-center gap-2 px-4 py-2.5 border-b border-[#f5f2ea] bg-[#fffbeb]">
+                <Clock className="w-3.5 h-3.5 text-amber-600 flex-shrink-0" />
+                <span className="text-xs font-semibold text-amber-900">Precisa de você</span>
+                <span className="text-xs font-semibold text-amber-700 tabular-nums">{pendenciasVivas.length}</span>
+                {pendenciasSemCobranca > 0 && (
+                  <span className="ml-auto rounded-full border border-red-200 bg-red-50 px-2 py-0.5 text-[11px] font-semibold text-red-700">
+                    {pendenciasSemCobranca === 1 ? 'sem cobrança em curso' : `${pendenciasSemCobranca} sem cobrança em curso`}
+                  </span>
+                )}
+              </div>
+
+              <div className="divide-y divide-[#f5f2ea]">
+                {pendenciasVivas.map(({ req, cobranca, signatarioPendente, visitouEm }) => (
+                  <div key={req.id} className="flex flex-col @lg:flex-row @lg:items-center gap-3 px-4 py-3 transition hover:bg-[#fdfcfa]">
+                    <button
+                      type="button"
+                      onClick={() => openDetails(req)}
+                      className="flex-1 min-w-0 text-left"
+                    >
+                      <div className="text-sm font-semibold text-slate-900 truncate">{req.document_name}</div>
+                      <div className="mt-0.5 text-xs text-slate-500 truncate">
+                        {req.client_name || signatarioPendente?.name || 'Sem cliente vinculado'}
+                        <span className="text-slate-300"> · </span>
+                        esperando {timeAgo(req.created_at)}
+                        <span className="text-slate-300"> · </span>
+                        {visitouEm ? `abriu ${quandoCurto(visitouEm)}` : 'ainda não abriu'}
+                      </div>
+
+                      <div className="mt-1.5 text-xs">
+                        {cobranca.parada ? (
+                          <span className="text-red-700">
+                            <AlertTriangle className="inline-block w-3 h-3 -mt-px mr-1" />
+                            <span className="font-semibold">Cobrança parada</span>
+                            <span className="text-red-600"> — {descreverParada(cobranca.motivo)}.</span>
+                            {comoDestravar(cobranca.motivo) && (
+                              <span className="text-slate-500"> {comoDestravar(cobranca.motivo)}</span>
+                            )}
+                          </span>
+                        ) : (
+                          <span className="text-slate-500">
+                            <Send className="inline-block w-3 h-3 -mt-px mr-1 text-slate-400" />
+                            {cobranca.lembretesEnviados === 0
+                              ? 'Nenhum lembrete enviado ainda'
+                              : `${cobranca.lembretesEnviados} de ${cobranca.totalDeLembretes} lembretes enviados`}
+                            {cobranca.proximoLembreteEm && (
+                              <span className="text-slate-400">
+                                {' · '}próximo {new Date(cobranca.proximoLembreteEm).getTime() <= Date.now()
+                                  ? 'na próxima varredura'
+                                  : quandoCurto(cobranca.proximoLembreteEm)}
+                              </span>
+                            )}
+                          </span>
+                        )}
+                      </div>
+                    </button>
+
+                    <div className="flex items-center gap-1.5 flex-shrink-0">
+                      <button
+                        type="button"
+                        onClick={() => cobrarAssinatura(req, signatarioPendente)}
+                        className="inline-flex items-center gap-1.5 rounded-lg bg-orange-500 px-3 py-1.5 text-xs font-semibold text-white transition hover:bg-orange-600"
+                      >
+                        <Send className="w-3 h-3" />
+                        Cobrar agora
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => openDetails(req)}
+                        className="inline-flex items-center gap-1.5 rounded-lg border border-[#e7e5df] bg-white px-3 py-1.5 text-xs font-semibold text-slate-700 transition hover:bg-slate-50"
+                      >
+                        Abrir
+                      </button>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+
           {/* Lista de documentos */}
           <div className="rounded-2xl bg-[#f8f7f5]" style={{ border: '1px solid #e2e8f0', boxShadow: '0 1px 4px rgba(15,23,42,0.05)' }}>
         {filteredRequestsByFolder.length === 0 && filteredGeneratedDocumentsByFolder.length === 0 ? (
@@ -5201,12 +5641,18 @@ const SignatureModule: React.FC<SignatureModuleProps> = ({ prefillData, focusReq
                   }}
                   onDragEnd={() => {
                     setIsDraggingExplorer(false);
-                    setDragOverFolderId(null);
+                    setDragOverFolderId(undefined);
                     setDraggingExplorer(null);
                     if (dragImageElRef.current) {
                       try { document.body.removeChild(dragImageElRef.current); } catch { /* ignore */ }
                       dragImageElRef.current = null;
                     }
+                    // Sem isto, a trava que impede o clique de disparar ao
+                    // SOLTAR um arraste ficava ligada para sempre: bastava
+                    // arrastar uma linha uma vez e, daí em diante, clicar em
+                    // qualquer linha não abria mais o documento. O cartão da
+                    // grade já liberava; a linha da lista, não.
+                    releaseSuppressExplorerClick();
                   }}
                   onContextMenu={(e) => {
                     e.preventDefault();
@@ -5219,7 +5665,7 @@ const SignatureModule: React.FC<SignatureModuleProps> = ({ prefillData, focusReq
                   style={{
                     background: '#ffffff',
                     borderRadius: 12,
-                    border: '1px solid #e8edf2',
+                    border: '1px solid #e7e5df',
                     boxShadow: '0 1px 3px rgba(15,23,42,0.05)',
                     cursor: 'grab',
                     transition: 'box-shadow 0.15s, border-color 0.15s, background 0.15s',
@@ -5228,12 +5674,12 @@ const SignatureModule: React.FC<SignatureModuleProps> = ({ prefillData, focusReq
                   }}
                   onMouseEnter={e => {
                     (e.currentTarget as HTMLElement).style.boxShadow = '0 4px 16px rgba(15,23,42,0.09)';
-                    (e.currentTarget as HTMLElement).style.borderColor = '#c7d2da';
-                    (e.currentTarget as HTMLElement).style.background = '#fafcfe';
+                    (e.currentTarget as HTMLElement).style.borderColor = '#d6d2c6';
+                    (e.currentTarget as HTMLElement).style.background = '#fdfcfa';
                   }}
                   onMouseLeave={e => {
                     (e.currentTarget as HTMLElement).style.boxShadow = '0 1px 3px rgba(15,23,42,0.05)';
-                    (e.currentTarget as HTMLElement).style.borderColor = '#e8edf2';
+                    (e.currentTarget as HTMLElement).style.borderColor = '#e7e5df';
                     (e.currentTarget as HTMLElement).style.background = '#ffffff';
                   }}
                 >
@@ -5250,10 +5696,14 @@ const SignatureModule: React.FC<SignatureModuleProps> = ({ prefillData, focusReq
                       </div>
                     )}
 
-                    {/* Doc icon */}
-                    <div style={{ width: 38, height: 38, borderRadius: 9, background: statusBg, border: `1px solid ${statusBorder}`, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
-                      <FileSignature style={{ width: 17, height: 17, color: statusColor }} />
-                    </div>
+                    {/* O rosto de quem assina, no lugar do mesmo ícone repetido */}
+                    <AvatarDoSignatario
+                      nome={clientLabel}
+                      fotoUrl={selfiePorSolicitacao[req.id] ?? (req.client_id ? fotosPorCliente[req.client_id] : null)}
+                      tamanho={38}
+                      anel={statusColor}
+                      titulo={`${clientLabel} — ${allSigned ? 'assinado' : 'aguardando'}`}
+                    />
 
                     {/* Main info */}
                     <div style={{ flex: 1, minWidth: 0 }}>
@@ -5320,8 +5770,10 @@ const SignatureModule: React.FC<SignatureModuleProps> = ({ prefillData, focusReq
                       </div>
                     </div>
 
-                    {/* Signatários avatars */}
-                    {req.signers && req.signers.length > 0 && (
+                    {/* Signatários: só quando são vários. Com um único
+                        signatário isto repetia, do lado direito, o mesmo rosto
+                        que já abre a linha. */}
+                    {req.signers && req.signers.length > 1 && (
                       <div style={{ display: 'flex', alignItems: 'center', flexShrink: 0 }}>
                         {req.signers.slice(0, 3).map((s: Signer, i: number) => {
                           const initials = s.name.split(' ').slice(0, 2).map((n: string) => n[0]).join('').toUpperCase();
@@ -5358,15 +5810,52 @@ const SignatureModule: React.FC<SignatureModuleProps> = ({ prefillData, focusReq
                         {isBlocked ? <Lock style={{ width: 10, height: 10 }} /> : allSigned ? <CheckCircle style={{ width: 10, height: 10 }} /> : <Clock style={{ width: 10, height: 10 }} />}
                         {isBlocked ? 'Bloqueado' : allSigned ? 'Assinado' : `${signedCount}/${totalSigners}`}
                       </span>
-                      {totalSigners > 0 && (
+                      {totalSigners > 0 && (allSigned ? (
                         <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
                           <div style={{ width: 72, height: 4, borderRadius: 999, background: '#f1f5f9', overflow: 'hidden' }}>
                             <div style={{ height: '100%', borderRadius: 999, width: `${pct}%`, background: statusColor, transition: 'width 0.4s' }} />
                           </div>
                           <span style={{ fontSize: 10, fontWeight: 700, color: pct === 100 ? '#16a34a' : '#94a3b8', minWidth: 28, textAlign: 'right' }}>{pct}%</span>
                         </div>
-                      )}
+                      ) : (() => {
+                        // Enquanto ninguém assinou, "0%" é a mesma resposta para
+                        // quem nunca abriu o link e para quem parou no último
+                        // passo. A fita mostra o degrau real.
+                        const pendente = (req.signers ?? []).find((s: Signer) => s.status !== 'signed' && !s.refused_at) ?? null;
+                        const degraus = montarDegraus(pendente, { criadaEm: req.created_at, authMethod: pendente?.auth_method ?? req.auth_method });
+                        return (
+                          <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: 3 }}>
+                            <FitaDeDegraus degraus={degraus} />
+                            <span style={{ fontSize: 9.5, color: '#94a3b8', whiteSpace: 'nowrap' }}>{ondeParou(degraus)}</span>
+                          </div>
+                        );
+                      })())}
                     </div>
+
+                    {/* Guardar em pasta sem precisar arrastar. Arrastar
+                        continua valendo; este botão é o caminho de quem está
+                        no fim de uma lista longa, ou no celular, onde arrastar
+                        não é uma opção. */}
+                    <button
+                      type="button"
+                      title="Guardar em uma pasta"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        setMoveTarget({ itemType: 'signature_request', itemId: req.id, createdBy: req.created_by });
+                        const atual = explorerItemIndex.get(`signature_request:${req.id}`);
+                        setMoveSelectedFolderId(atual?.folder_id ?? null);
+                        setMoveModalOpen(true);
+                      }}
+                      style={{
+                        display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
+                        width: 28, height: 28, borderRadius: 8, flexShrink: 0,
+                        border: '1px solid #e7e5df', background: '#ffffff', color: '#94a3b8', cursor: 'pointer',
+                      }}
+                      onMouseEnter={(e) => { e.currentTarget.style.color = '#ea580c'; e.currentTarget.style.borderColor = '#fed7aa'; }}
+                      onMouseLeave={(e) => { e.currentTarget.style.color = '#94a3b8'; e.currentTarget.style.borderColor = '#e7e5df'; }}
+                    >
+                      <FolderOpen style={{ width: 14, height: 14 }} />
+                    </button>
 
                     {/* Arrow */}
                     <ChevronRight style={{ width: 16, height: 16, color: '#cbd5e1', flexShrink: 0 }} />
@@ -5402,7 +5891,7 @@ const SignatureModule: React.FC<SignatureModuleProps> = ({ prefillData, focusReq
                         }}
                         onDragEnd={() => {
                           setIsDraggingExplorer(false);
-                          setDragOverFolderId(null);
+                          setDragOverFolderId(undefined);
                           setDraggingExplorer(null);
                           if (dragImageElRef.current) {
                             try {
@@ -5476,7 +5965,7 @@ const SignatureModule: React.FC<SignatureModuleProps> = ({ prefillData, focusReq
                     }}
                     onDragEnd={() => {
                       setIsDraggingExplorer(false);
-                      setDragOverFolderId(null);
+                      setDragOverFolderId(undefined);
                       setDraggingExplorer(null);
                       if (dragImageElRef.current) {
                         try { document.body.removeChild(dragImageElRef.current); } catch { /* ignore */ }
@@ -5498,8 +5987,8 @@ const SignatureModule: React.FC<SignatureModuleProps> = ({ prefillData, focusReq
                       style={{
                         background: '#ffffff',
                         borderRadius: 14,
-                        border: '1px solid #e2e8f0',
-                        boxShadow: '0 1px 4px rgba(15,23,42,0.07)',
+                        border: '1px solid #e7e5df',
+                        boxShadow: '0 1px 3px rgba(15,23,42,0.05)',
                         overflow: 'hidden',
                         display: 'flex',
                         flexDirection: 'column',
@@ -5507,143 +5996,116 @@ const SignatureModule: React.FC<SignatureModuleProps> = ({ prefillData, focusReq
                       }}
                       onMouseEnter={e => {
                         const el = e.currentTarget as HTMLElement;
-                        el.style.boxShadow = '0 12px 32px rgba(15,23,42,0.12), 0 2px 8px rgba(15,23,42,0.06)';
-                        el.style.borderColor = '#c7d2da';
-                        el.style.transform = 'translateY(-3px)';
+                        el.style.boxShadow = '0 8px 24px rgba(15,23,42,0.10)';
+                        el.style.borderColor = '#d6d2c6';
+                        el.style.transform = 'translateY(-2px)';
                       }}
                       onMouseLeave={e => {
                         const el = e.currentTarget as HTMLElement;
-                        el.style.boxShadow = '0 1px 4px rgba(15,23,42,0.07)';
-                        el.style.borderColor = '#e2e8f0';
+                        el.style.boxShadow = '0 1px 3px rgba(15,23,42,0.05)';
+                        el.style.borderColor = '#e7e5df';
                         el.style.transform = 'translateY(0)';
                       }}
                     >
-                      {/* ── Header strip ── */}
-                      <div style={{ padding: '12px 14px 10px', borderBottom: '1px solid #f8fafc', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8 }}>
-                        {/* Status badge */}
-                        <span style={{
-                          display: 'inline-flex', alignItems: 'center', gap: 5,
-                          padding: '3px 9px', borderRadius: 20,
-                          fontSize: 10, fontWeight: 700, letterSpacing: '0.04em',
-                          color: statusColor, background: statusBg, border: `1px solid ${statusBorder}`,
-                        }}>
-                          <span style={{ width: 5, height: 5, borderRadius: '50%', background: statusColor, flexShrink: 0 }} />
-                          {statusLabel}
-                        </span>
+                      {/* ── A COR DO ESTADO, EM UM FIO ──────────────────
+                          O cartão de antes empilhava um selo colorido, um
+                          ícone de PDF desenhado à mão, o título, o cliente,
+                          etiquetas, avatares, uma barra e um "100%" — oito
+                          elementos para dizer uma coisa que quase sempre é a
+                          mesma. Agora o estado é um fio no topo, o título tem
+                          espaço, e o que muda de documento para documento é o
+                          que aparece. */}
+                      <div style={{ height: 3, background: statusColor, flexShrink: 0 }} />
 
-                        {/* Right controls */}
-                        <div style={{ display: 'flex', alignItems: 'center', gap: 5 }}>
-                          {isInCloud && (
-                            <span title="Pasta na nuvem criada" style={{ display: 'inline-flex', alignItems: 'center', justifyContent: 'center', width: 22, height: 22, borderRadius: 6, background: '#f0fdf4', border: '1px solid #bbf7d0' }}>
-                              <FolderOpen style={{ width: 11, height: 11, color: '#16a34a' }} />
-                            </span>
-                          )}
-                          {selectionMode && (
-                            <div onClick={e => e.stopPropagation()}>
-                              <input type="checkbox" style={{ width: 14, height: 14, accentColor: '#ea580c', cursor: 'pointer' }}
-                                checked={selectedRequestIds.has(req.id)} onChange={() => toggleSelectedRequestId(req.id)} />
-                            </div>
-                          )}
-                        </div>
-                      </div>
+                      <div style={{ padding: '12px 14px 10px', flex: 1, display: 'flex', flexDirection: 'column' }}>
 
-                      {/* ── Body ── */}
-                      <div style={{ padding: '14px 14px 10px', flex: 1, display: 'flex', flexDirection: 'column', gap: 0 }}>
-
-                        {/* Doc icon + title */}
-                        <div style={{ display: 'flex', gap: 10, alignItems: 'flex-start', marginBottom: 10 }}>
-                          {/* File icon */}
-                          <div style={{ flexShrink: 0, width: 36, height: 44, borderRadius: 6, background: '#f8fafc', border: '1px solid #e2e8f0', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', position: 'relative', overflow: 'hidden' }}>
-                            <div style={{ position: 'absolute', top: 0, right: 0, width: 10, height: 10, background: '#e2e8f0', borderBottomLeftRadius: 4 }} />
-                            <div style={{ position: 'absolute', top: 0, right: 0, width: 10, height: 10, background: '#fff', borderRadius: '0 0 0 4px', transform: 'translate(-1px, -1px)', border: '1px solid #e2e8f0' }} />
-                            <FileSignature style={{ width: 14, height: 14, color: '#ea580c', marginTop: 4 }} />
-                            <span style={{ fontSize: 7, fontWeight: 800, color: '#94a3b8', letterSpacing: '0.05em', marginTop: 2 }}>PDF</span>
+                        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8, marginBottom: 9 }}>
+                          <span style={{ fontSize: 10, fontWeight: 700, letterSpacing: '0.04em', color: statusColor, textTransform: 'uppercase' }}>
+                            {statusLabel}
+                          </span>
+                          <div style={{ display: 'flex', alignItems: 'center', gap: 5 }}>
+                            {isInCloud && (
+                              <span title="Pasta na nuvem criada">
+                                <FolderOpen style={{ width: 12, height: 12, color: '#16a34a' }} />
+                              </span>
+                            )}
+                            {selectionMode && (
+                              <div onClick={e => e.stopPropagation()}>
+                                <input type="checkbox" style={{ width: 14, height: 14, accentColor: '#ea580c', cursor: 'pointer' }}
+                                  checked={selectedRequestIds.has(req.id)} onChange={() => toggleSelectedRequestId(req.id)} />
+                              </div>
+                            )}
                           </div>
-                          <div style={{ flex: 1, minWidth: 0 }}>
-                            <p style={{ margin: 0, fontSize: 12, fontWeight: 700, color: '#0f172a', lineHeight: 1.4, display: '-webkit-box', WebkitLineClamp: 3, WebkitBoxOrient: 'vertical' as any, overflow: 'hidden' }}>
+                        </div>
+
+                        <div style={{ display: 'flex', gap: 10, alignItems: 'flex-start' }}>
+                          <AvatarDoSignatario
+                            nome={clientLabel}
+                            fotoUrl={selfiePorSolicitacao[req.id] ?? (req.client_id ? fotosPorCliente[req.client_id] : null)}
+                            tamanho={36}
+                            anel={statusColor}
+                            titulo={`${clientLabel} — ${statusLabel.toLowerCase()}`}
+                          />
+                          <div style={{ minWidth: 0, flex: 1 }}>
+                            <p style={{ margin: 0, fontSize: 13, fontWeight: 600, color: '#0f172a', lineHeight: 1.35, letterSpacing: '-0.01em', display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical' as any, overflow: 'hidden' }}>
                               {req.document_name}
+                            </p>
+                            <p style={{ margin: '4px 0 0', fontSize: 11, color: '#94a3b8', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                              {clientLabel}
                             </p>
                           </div>
                         </div>
 
-                        {/* Client */}
-                        <div style={{ display: 'flex', alignItems: 'center', gap: 5, marginBottom: isGlobalSearch ? 5 : 12 }}>
-                          <User style={{ width: 11, height: 11, color: '#94a3b8', flexShrink: 0 }} />
-                          <span style={{ fontSize: 11, color: '#64748b', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{clientLabel}</span>
-                        </div>
-
-                        {/* Caixa de origem — só na busca global, que atravessa as pastas */}
                         {isGlobalSearch && (
-                          <div style={{ display: 'flex', alignItems: 'center', gap: 5, marginBottom: 12 }}
+                          <p style={{ margin: '5px 0 0', display: 'flex', alignItems: 'center', gap: 4, fontSize: 10.5, color: '#94a3b8', overflow: 'hidden' }}
                             title={`Está em: ${folderLabelForItem('signature_request', req.id)}`}>
-                            <Folder style={{ width: 11, height: 11, color: '#94a3b8', flexShrink: 0 }} />
-                            <span style={{ fontSize: 11, color: '#94a3b8', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                            <Folder style={{ width: 10, height: 10, flexShrink: 0 }} />
+                            <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
                               {folderLabelForItem('signature_request', req.id)}
                             </span>
-                          </div>
+                          </p>
                         )}
 
-                        {/* Tags */}
-                        {(req.process_id || req.requirement_id) && (
-                          <div style={{ display: 'flex', gap: 4, marginBottom: 12 }}>
-                            {req.process_id && (
-                              <span style={{ display: 'inline-flex', alignItems: 'center', gap: 3, padding: '2px 7px', borderRadius: 4, fontSize: 10, fontWeight: 600, color: '#475569', background: '#f8fafc', border: '1px solid #e2e8f0' }}>
-                                <FileText style={{ width: 9, height: 9 }} />Processo
+                        {/* Onde a assinatura está — o miolo do cartão */}
+                        <div style={{ marginTop: 'auto', paddingTop: 12 }}>
+                          {allSigned ? (
+                            <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                              <CheckCircle style={{ width: 12, height: 12, color: '#16a34a', flexShrink: 0 }} />
+                              <span style={{ fontSize: 11, color: '#15803d', fontWeight: 600 }}>
+                                {totalSigners > 1 ? `${signedCount} de ${totalSigners} assinaram` : 'Assinado'}
                               </span>
-                            )}
-                            {req.requirement_id && (
-                              <span style={{ display: 'inline-flex', alignItems: 'center', gap: 3, padding: '2px 7px', borderRadius: 4, fontSize: 10, fontWeight: 600, color: '#c2410c', background: '#fff7ed', border: '1px solid #fed7aa' }}>
-                                <FileText style={{ width: 9, height: 9 }} />Req.
-                              </span>
-                            )}
-                          </div>
-                        )}
-
-                        {/* Signatários avatars */}
-                        {req.signers && req.signers.length > 0 && (
-                          <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 12 }}>
-                            <div style={{ display: 'flex', alignItems: 'center' }}>
-                              {req.signers.slice(0, 4).map((s: Signer, i: number) => {
-                                const initials = s.name.split(' ').slice(0, 2).map((n: string) => n[0]).join('').toUpperCase();
-                                const signed = s.status === 'signed';
-                                return (
-                                  <div key={s.id} title={`${s.name} — ${signed ? 'Assinou' : 'Aguardando'}`} style={{
-                                    width: 24, height: 24, borderRadius: '50%',
-                                    background: signed ? '#dcfce7' : '#f1f5f9',
-                                    border: `2px solid ${signed ? '#16a34a' : '#cbd5e1'}`,
-                                    display: 'flex', alignItems: 'center', justifyContent: 'center',
-                                    fontSize: 8, fontWeight: 800, color: signed ? '#15803d' : '#64748b',
-                                    marginLeft: i > 0 ? -6 : 0, zIndex: req.signers.length - i,
-                                    position: 'relative',
-                                  }}>
-                                    {initials}
-                                  </div>
-                                );
-                              })}
-                              {req.signers.length > 4 && (
-                                <div style={{ width: 24, height: 24, borderRadius: '50%', background: '#f1f5f9', border: '2px solid #e2e8f0', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 8, fontWeight: 700, color: '#94a3b8', marginLeft: -6 }}>
-                                  +{req.signers.length - 4}
-                                </div>
-                              )}
                             </div>
-                            <span style={{ fontSize: 10, color: '#94a3b8' }}>
-                              {signedCount}/{totalSigners} {totalSigners === 1 ? 'assinante' : 'assinantes'}
-                            </span>
-                          </div>
-                        )}
+                          ) : (() => {
+                            const pendente = (req.signers ?? []).find((sg: Signer) => sg.status !== 'signed' && !sg.refused_at) ?? null;
+                            const degraus = montarDegraus(pendente, { criadaEm: req.created_at, authMethod: pendente?.auth_method ?? req.auth_method });
+                            return (
+                              <div style={{ display: 'flex', flexDirection: 'column', gap: 5 }}>
+                                <FitaDeDegraus degraus={degraus} />
+                                <span style={{ fontSize: 10.5, color: '#b45309', fontWeight: 500 }}>{ondeParou(degraus)}</span>
+                              </div>
+                            );
+                          })()}
+                        </div>
                       </div>
 
-                      {/* ── Footer ── */}
-                      <div style={{ padding: '10px 14px', borderTop: '1px solid #f1f5f9', background: '#fafafa', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8 }}>
-                        <span style={{ fontSize: 10, color: '#94a3b8', fontWeight: 500 }}>{formatDate(req.created_at)}</span>
-                        <div style={{ display: 'flex', alignItems: 'center', gap: 6, flex: 1, justifyContent: 'flex-end' }}>
-                          {totalSigners > 0 && (
-                            <>
-                              <div style={{ flex: 1, maxWidth: 72, height: 4, borderRadius: 999, background: '#e2e8f0', overflow: 'hidden' }}>
-                                <div style={{ height: '100%', borderRadius: 999, width: `${pct}%`, background: statusColor, transition: 'width 0.4s' }} />
-                              </div>
-                              <span style={{ fontSize: 10, fontWeight: 700, color: pct === 100 ? '#16a34a' : '#94a3b8', minWidth: 28, textAlign: 'right' }}>{pct}%</span>
-                            </>
+                      {/* ── Rodapé: data e vínculos ── */}
+                      <div style={{ padding: '8px 14px', borderTop: '1px solid #f5f2ea', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8 }}>
+                        <span style={{ fontSize: 10, color: '#b6b1a6', fontWeight: 500 }}>{formatDate(req.created_at)}</span>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: 5 }}>
+                          {req.process_id && (
+                            <span title="Vinculado a um processo" style={{ fontSize: 9.5, fontWeight: 600, color: '#64748b', background: '#f5f5f3', border: '1px solid #e7e5df', borderRadius: 4, padding: '1px 6px' }}>
+                              Processo
+                            </span>
+                          )}
+                          {req.requirement_id && (
+                            <span title="Vinculado a um requerimento" style={{ fontSize: 9.5, fontWeight: 600, color: '#c2410c', background: '#fff7ed', border: '1px solid #fed7aa', borderRadius: 4, padding: '1px 6px' }}>
+                              Requerimento
+                            </span>
+                          )}
+                          {totalSigners > 1 && (
+                            <span title={`${totalSigners} signatários`} style={{ fontSize: 9.5, fontWeight: 600, color: '#64748b', background: '#f5f5f3', border: '1px solid #e7e5df', borderRadius: 4, padding: '1px 6px' }}>
+                              {totalSigners} assinantes
+                            </span>
                           )}
                         </div>
                       </div>
@@ -5674,7 +6136,7 @@ const SignatureModule: React.FC<SignatureModuleProps> = ({ prefillData, focusReq
                       }}
                       onDragEnd={() => {
                         setIsDraggingExplorer(false);
-                        setDragOverFolderId(null);
+                        setDragOverFolderId(undefined);
                         setDraggingExplorer(null);
                         if (dragImageElRef.current) {
                           try {
@@ -5820,21 +6282,78 @@ const SignatureModule: React.FC<SignatureModuleProps> = ({ prefillData, focusReq
           onClick={(e) => e.stopPropagation()}
           onContextMenu={(e) => e.preventDefault()}
         >
-          <div className="w-56 rounded-xl border border-[#e7e5df] bg-[#f8f7f5] shadow-xl overflow-hidden">
-            <button
-              type="button"
-              onClick={() => {
-                setMoveTarget({ itemType: contextMenu.itemType, itemId: contextMenu.itemId, createdBy: contextMenu.createdBy });
-                const current = explorerItemIndex.get(`${contextMenu.itemType}:${contextMenu.itemId}`);
-                setMoveSelectedFolderId(current?.folder_id ?? null);
-                setMoveModalOpen(true);
-                setContextMenu(null);
-              }}
-              className="w-full px-3 py-2 text-left text-xs font-semibold text-slate-700 hover:bg-slate-50 transition"
-            >
-              Mover...
-            </button>
-          </div>
+          {/* O menu do botão direito guarda as PASTAS, não um atalho para um
+              modal. Guardar um documento é a coisa mais repetida aqui, e antes
+              custava três passos — abrir "Mover...", achar a pasta na lista,
+              confirmar — para uma decisão que quase sempre já está tomada
+              quando o dedo chega no botão direito. Agora o destino é o próprio
+              menu: um clique guarda. O modal continua existindo, para quando as
+              pastas forem muitas ou aninhadas. */}
+          {(() => {
+            const alvo = explorerItemIndex.get(`${contextMenu.itemType}:${contextMenu.itemId}`);
+            const pastaAtual = alvo?.folder_id ?? null;
+            const destinos = [
+              { id: null as string | null, nome: 'Caixa de Entrada', icone: Inbox },
+              ...orderedFolders.map((f) => ({ id: f.id as string | null, nome: f.name, icone: FolderOpen })),
+            ];
+            return (
+              <div className="w-60 rounded-xl border border-[#e7e5df] bg-[#f8f7f5] shadow-xl overflow-hidden py-1">
+                <p className="px-3 py-1.5 text-[10px] font-bold uppercase tracking-wider text-slate-400">
+                  Guardar em
+                </p>
+
+                {destinos.map((destino) => {
+                  const aqui = destino.id === pastaAtual;
+                  const Icone = destino.icone;
+                  return (
+                    <button
+                      key={destino.id ?? '__root__'}
+                      type="button"
+                      disabled={aqui}
+                      onClick={() => {
+                        const itemType = contextMenu.itemType;
+                        const itemId = contextMenu.itemId;
+                        setContextMenu(null);
+                        void handleMoveItemToFolder({ itemType, itemId, folderId: destino.id });
+                      }}
+                      className={`w-full flex items-center gap-2 px-3 py-2 text-left text-xs font-medium transition ${
+                        aqui ? 'text-slate-400 cursor-default' : 'text-slate-700 hover:bg-white'
+                      }`}
+                    >
+                      <Icone className={`w-3.5 h-3.5 flex-shrink-0 ${aqui ? 'text-slate-300' : 'text-slate-400'}`} />
+                      <span className="flex-1 truncate">{destino.nome}</span>
+                      {aqui && <Check className="w-3.5 h-3.5 text-emerald-500 flex-shrink-0" />}
+                    </button>
+                  );
+                })}
+
+                <div className="my-1 h-px bg-[#e7e5df]" />
+
+                <button
+                  type="button"
+                  onClick={() => {
+                    setMoveTarget({ itemType: contextMenu.itemType, itemId: contextMenu.itemId, createdBy: contextMenu.createdBy });
+                    setMoveSelectedFolderId(pastaAtual);
+                    setMoveModalOpen(true);
+                    setContextMenu(null);
+                  }}
+                  className="w-full flex items-center gap-2 px-3 py-2 text-left text-xs font-medium text-slate-500 hover:bg-white transition"
+                >
+                  <FolderOpen className="w-3.5 h-3.5 flex-shrink-0 text-slate-400" />
+                  Escolher outra pasta…
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => { openCreateFolderModal(pastaAtual); setContextMenu(null); }}
+                  className="w-full flex items-center gap-2 px-3 py-2 text-left text-xs font-medium text-slate-500 hover:bg-white transition"
+                >
+                  <Plus className="w-3.5 h-3.5 flex-shrink-0 text-slate-400" />
+                  Nova pasta…
+                </button>
+              </div>
+            );
+          })()}
         </div>
       )}
 
@@ -6236,6 +6755,69 @@ const SignatureModule: React.FC<SignatureModuleProps> = ({ prefillData, focusReq
         ) : undefined}
       >
         {detailsRequest && (<>
+            {/* ── ATÉ ONDE O CLIENTE CHEGOU ────────────────────────────────
+                A primeira coisa do painel deixa de ser um botão e passa a ser
+                a resposta que se procura ao abrir um documento parado: em que
+                degrau a pessoa está, desde quando, e o que a cobrança
+                automática está fazendo a respeito. Só aparece enquanto há
+                alguém para esperar — documento concluído não tem espera. */}
+            {(() => {
+              const pendente = (detailsRequest.signers ?? []).find((s: Signer) => s.status !== 'signed' && !s.refused_at) ?? null;
+              // Concluído também tem caminho: a escada vira o registro de como
+              // a pessoa assinou, com a hora de cada etapa. Quem não tem
+              // signatário nenhum é que não tem o que mostrar.
+              const referencia = pendente ?? (detailsRequest.signers ?? [])[0] ?? null;
+              if (!referencia) return null;
+              const degraus = montarDegraus(referencia, {
+                criadaEm: detailsRequest.created_at,
+                authMethod: referencia.auth_method ?? detailsRequest.auth_method,
+              });
+              const acompanhamento = pendenciasVivas.find((p) => p.req.id === detailsRequest.id)?.cobranca ?? null;
+              return (
+                <div className="px-5 py-4" style={{ borderBottom: '1px solid #f1f5f9', background: '#fdfcfa' }}>
+                  <div className="flex items-baseline justify-between gap-3 mb-3">
+                    <span className="text-[10px] font-bold uppercase tracking-wider text-slate-400">
+                      {pendente ? 'Até onde o cliente chegou' : 'Como o cliente assinou'}
+                    </span>
+                    <span className={`text-[11px] font-semibold ${pendente ? 'text-amber-700' : 'text-emerald-700'}`}>
+                      {ondeParou(degraus)}
+                    </span>
+                  </div>
+
+                  <EscadaDeAssinatura degraus={degraus} />
+
+                  {acompanhamento && (
+                    <div className="mt-4 pt-3 text-[11.5px]" style={{ borderTop: '1px solid #f1f5f9' }}>
+                      {acompanhamento.parada ? (
+                        <span className="text-red-700">
+                          <AlertTriangle className="inline-block w-3 h-3 -mt-px mr-1" />
+                          <span className="font-semibold">Cobrança parada</span>
+                          <span className="text-red-600"> — {descreverParada(acompanhamento.motivo)}.</span>
+                          {comoDestravar(acompanhamento.motivo) && (
+                            <span className="text-slate-500"> {comoDestravar(acompanhamento.motivo)}</span>
+                          )}
+                        </span>
+                      ) : (
+                        <span className="text-slate-500">
+                          <Send className="inline-block w-3 h-3 -mt-px mr-1 text-slate-400" />
+                          {acompanhamento.lembretesEnviados === 0
+                            ? 'Nenhum lembrete automático enviado ainda'
+                            : `${acompanhamento.lembretesEnviados} de ${acompanhamento.totalDeLembretes} lembretes automáticos enviados`}
+                          {acompanhamento.proximoLembreteEm && (
+                            <span className="text-slate-400">
+                              {' · '}próximo {new Date(acompanhamento.proximoLembreteEm).getTime() <= Date.now()
+                                ? 'na próxima varredura'
+                                : quandoCurto(acompanhamento.proximoLembreteEm)}
+                            </span>
+                          )}
+                        </span>
+                      )}
+                    </div>
+                  )}
+                </div>
+              );
+            })()}
+
             {/* ── Banner de bloqueio ── */}
             {(detailsRequest as any).blocked_at && (
               <div className="flex items-center justify-between gap-3 px-5 py-3" style={{ background: '#fef2f2', borderBottom: '1px solid #fecaca' }}>
@@ -6525,7 +7107,13 @@ const SignatureModule: React.FC<SignatureModuleProps> = ({ prefillData, focusReq
 
                 {detailsRequest.signers.every((s) => s.status === 'signed') && (
                   <div className={(detailsRequest as any).signature_model === 'per_document' ? '' : 'mt-3 pt-3'} style={(detailsRequest as any).signature_model === 'per_document' ? undefined : { borderTop: '1px solid #f1f5f9' }}>
+                    {/* As ações do documento pronto eram uma fileira única de
+                        sete links do mesmo tamanho — o que leva o documento
+                        adiante e o que serve para provar que ele vale
+                        misturados. Agora são dois grupos com nome, porque são
+                        duas intenções diferentes. */}
                     <div className="flex flex-nowrap items-center gap-x-3 overflow-x-auto scrollbar-hide">
+                      <span className="text-[10px] font-bold uppercase tracking-wider text-slate-300 flex-shrink-0">Entregar</span>
                       <button
                         disabled={openProcessLoading}
                         onClick={async () => {
@@ -6584,6 +7172,9 @@ const SignatureModule: React.FC<SignatureModuleProps> = ({ prefillData, focusReq
                         {copyToNextcloudLoading ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <UploadCloud className="w-3.5 h-3.5" />}
                         <span className="group-hover:underline underline-offset-2">Enviar ao Nextcloud</span>
                       </button>
+                      {detailsRequest.public_token && (
+                        <span className="text-[10px] font-bold uppercase tracking-wider text-slate-300 flex-shrink-0 pl-1">Provar</span>
+                      )}
                       {detailsRequest.public_token && (
                         <button
                           onClick={() => {
@@ -7032,6 +7623,7 @@ const SignatureModule: React.FC<SignatureModuleProps> = ({ prefillData, focusReq
                               return (
                                 <div className="flex flex-col gap-1.5">
                                   <div className="flex items-center gap-1.5">
+                                    <span className="text-[10px] font-bold uppercase tracking-wider text-slate-300 flex-shrink-0">Cobrar</span>
                                     {signer.phone && (
                                       <button
                                         type="button"
@@ -7128,7 +7720,7 @@ const SignatureModule: React.FC<SignatureModuleProps> = ({ prefillData, focusReq
 
               {/* Histórico */}
               <section>
-                <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-1.5">Histórico</p>
+                <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-1.5">Linha do tempo</p>
                 {auditLogLoading ? (
                   <div className="flex items-center justify-center py-10">
                     <Loader2 className="w-5 h-5 animate-spin text-slate-300" />
@@ -7142,8 +7734,11 @@ const SignatureModule: React.FC<SignatureModuleProps> = ({ prefillData, focusReq
                   <div className="relative pl-5">
                     <div className="absolute left-2 top-2 bottom-2 w-px bg-slate-200" />
                     <div className="space-y-3">
-                      {auditLog.map((log, index) => {
-                        const isLast = index === auditLog.length - 1;
+                      {agruparLinhaDoTempo(auditLog as unknown as EventoDeAuditoria[]).map((item, index, todos) => {
+                        const log = item.evento as unknown as SignatureAuditLog;
+                        const isLast = index === todos.length - 1;
+                        const dobrado = item.quantidade > 1;
+                        const aberto = gruposAbertos.has(item.chave);
                         let iconBg = 'bg-slate-100'; let iconColor = 'text-slate-500'; let Icon = Clock;
                         if (log.action === 'created') { iconBg = 'bg-orange-100'; iconColor = 'text-orange-600'; Icon = FileText; }
                         else if (log.action === 'sent') { iconBg = 'bg-purple-100'; iconColor = 'text-purple-600'; Icon = Send; }
@@ -7173,7 +7768,16 @@ const SignatureModule: React.FC<SignatureModuleProps> = ({ prefillData, focusReq
                             </div>
                             <div className="flex-1 min-w-0">
                               <div className="flex items-start justify-between gap-2">
-                                <p className="text-xs text-slate-700 font-medium leading-snug">{log.description}</p>
+                                <p className="text-xs text-slate-700 font-medium leading-snug">
+                                  {descreverGrupo(item)}
+                                  {dobrado && item.primeiroEm && (
+                                    <span className="block text-[10px] font-normal text-slate-400 mt-0.5">
+                                      entre {new Date(item.primeiroEm).toLocaleString('pt-BR', { timeZone: 'America/Cuiaba', day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit' })}
+                                      {' e '}
+                                      {new Date(log.created_at).toLocaleString('pt-BR', { timeZone: 'America/Cuiaba', day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit' })}
+                                    </span>
+                                  )}
+                                </p>
                                 <span className={`flex-shrink-0 text-[10px] px-1.5 py-0.5 rounded-full font-medium ${badgeCls}`}>{badgeLabel}</span>
                               </div>
                               <p className="text-[10px] text-slate-400 mt-0.5">
@@ -7187,7 +7791,31 @@ const SignatureModule: React.FC<SignatureModuleProps> = ({ prefillData, focusReq
                                   second: '2-digit',
                                 })}
                               </p>
-                              {(ipAddress || deviceLabel) && (
+                              {dobrado && (
+                                <button
+                                  type="button"
+                                  onClick={() => setGruposAbertos((atual) => {
+                                    const proximo = new Set(atual);
+                                    if (proximo.has(item.chave)) proximo.delete(item.chave); else proximo.add(item.chave);
+                                    return proximo;
+                                  })}
+                                  className="mt-1 inline-flex items-center gap-1 rounded-md border border-[#e7e5df] bg-[#f8f7f5] px-2 py-0.5 text-[10px] font-medium text-slate-500 transition hover:bg-white"
+                                >
+                                  {aberto ? <ChevronUp className="w-2.5 h-2.5" /> : <ChevronDown className="w-2.5 h-2.5" />}
+                                  {aberto ? 'recolher' : `ver as ${item.quantidade} uma a uma`}
+                                </button>
+                              )}
+                              {dobrado && aberto && (
+                                <div className="mt-1.5 space-y-0.5 border-l border-[#e7e5df] pl-2.5">
+                                  {item.eventos.map((e) => (
+                                    <p key={e.id} className="text-[10px] text-slate-400">
+                                      {new Date(e.created_at).toLocaleString('pt-BR', { timeZone: 'America/Cuiaba', day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit', second: '2-digit' })}
+                                      {(e as { ip_address?: string | null }).ip_address ? ` · IP ${(e as { ip_address?: string | null }).ip_address}` : ''}
+                                    </p>
+                                  ))}
+                                </div>
+                              )}
+                              {(ipAddress || deviceLabel) && !dobrado && (
                                 <div className="flex flex-wrap gap-x-3 gap-y-0.5 mt-1">
                                   {ipAddress && (
                                     <span className="text-[10px] text-slate-400 flex items-center gap-1">

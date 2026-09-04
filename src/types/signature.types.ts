@@ -42,6 +42,12 @@ export interface SignatureRequest {
   blocked_reason?: string | null;
   // Limpeza de DOCX provisórios após assinatura
   provisional_cleaned_at?: string | null;
+  // Cobrança automática por WhatsApp (Edge Function whatsapp-signature-followup).
+  // Quem escreve nestas colunas é o robô; a tela só as lê para dizer se e quando
+  // o cliente será lembrado — ver src/utils/cobrancaDeAssinatura.ts.
+  wa_followup_count?: number | null;
+  wa_followup_last_at?: string | null;
+  wa_tracking_stopped?: boolean | null;
   // Exige que o CPF informado na assinatura confira com o CPF cadastrado do signatário
   require_cpf?: boolean | null;
   // Permite que o signatário recuse a assinatura (com motivo) na página pública
@@ -140,6 +146,8 @@ export interface Signer {
   auth_verified_identifier?: string | null;
   // Aceite dos Termos de Uso (LGPD) no momento da assinatura
   terms_accepted_at?: string | null;
+  /** Quando o documento foi APRESENTADO ao signatário para leitura. */
+  presented_at?: string | null;
   terms_version?: string | null;
   // Instantes REAIS das etapas probatórias (clampados pelo servidor)
   auth_at?: string | null;

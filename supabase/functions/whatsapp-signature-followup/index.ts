@@ -84,7 +84,7 @@ Deno.serve(async (req) => {
   // Signers (presença + estado) e links de kit (para não duplicar com o follow-up de kit).
   const [{ data: signers }, { data: links }] = await Promise.all([
     admin.from('signature_signers')
-      .select('signature_request_id, status, public_token, viewed_at, opened_at, last_seen_at, signed_at, refused_at')
+      .select('id, signature_request_id, status, public_token, viewed_at, opened_at, last_seen_at, signed_at, refused_at')
       .in('signature_request_id', reqIds),
     admin.from('template_fill_links')
       .select('signature_request_id, followup_stopped, status')
@@ -189,6 +189,20 @@ Deno.serve(async (req) => {
       await admin.from('signature_requests')
         .update({ wa_followup_count: step + 1, wa_followup_last_at: new Date().toISOString() })
         .eq('id', r.id);
+      // O lembrete entra no HISTÓRICO do documento, e não só como nota na
+      // conversa. Antes disto o painel de assinatura contava uma história
+      // incompleta — dezesseis "abriu o documento" e nenhum dos lembretes que
+      // o escritório de fato mandou. A ação `reminder_sent` já existia no
+      // CHECK da tabela e o painel já sabia desenhá-la; faltava alguém
+      // escrever a linha. Fail-soft de propósito: um erro de auditoria não
+      // pode desfazer uma mensagem que o cliente já recebeu.
+      const { error: erroAuditoria } = await admin.from('signature_audit_log').insert({
+        signature_request_id: r.id,
+        signer_id: pending.id ?? null,
+        action: 'reminder_sent',
+        description: `Lembrete ${step + 1} de ${MAX_STEPS} enviado por WhatsApp`,
+      });
+      if (erroAuditoria) console.error('[followup] auditoria do lembrete falhou', erroAuditoria.message);
       await admin.from('whatsapp_internal_notes').insert({
         conversation_id: conv.id, author_id: null,
         body: `🔔 Lembrete de assinatura pendente enviado (lembrete ${step + 1}/${MAX_STEPS}) para "${r.document_name || 'documento'}".`,
