@@ -78,6 +78,157 @@ function jaAssinado(bytes: Uint8Array): boolean {
   return janela.includes('/ByteRange');
 }
 
+/**
+ * O CARIMBO DOS METADADOS — e por que ele é uma função só.
+ *
+ * Selar reescreve os bytes do PDF no Storage. Enquanto o hash gravado no banco
+ * não acompanhar, o documento de prova declara uma impressão digital que o
+ * arquivo não tem mais, e o `finalize-signature-envelope` acusa violação de
+ * integridade contra o próprio sistema que a produziu.
+ *
+ * Os updates viviam soltos, com o `error` ignorado, e a função devolvia
+ * `status: assinado` mesmo se os três falhassem. Uma segunda tentativa não
+ * consertava nada: o PDF já traz `/ByteRange`, o ramo `ja_assinado` respondia
+ * e ia embora. O estado ruim era PERMANENTE — arquivo selado com hash antigo,
+ * signatário sem `pades_signed_at`. Agora quem chama recebe a lista do que
+ * falhou e decide; e o `ja_assinado` usa esta mesma função para reparar.
+ *
+ * Quem decide SE vale reparar é a `conferirMetadados`; esta aqui só escreve.
+ * No reparo, o `seladoEm` que chega é o carimbo que já existia — a data do selo
+ * é a de quando ele foi aplicado, não a de quando se percebeu que faltava.
+ */
+async function carimbarMetadados(
+  supabase: any,
+  alvo: { docId: string | null; signerId: string | null; requestId: string; caminho: string },
+  sha: string,
+  seladoEm: string,
+): Promise<string[]> {
+  const falhas: string[] = [];
+
+  if (alvo.docId) {
+    // `hash_source: 'server'` porque foi o servidor que produziu estes bytes
+    // e mediu este hash. Sem isso o valor ficaria marcado como vindo do
+    // cliente — justamente o contrário do que acabou de acontecer.
+    const { error } = await supabase.from('signature_request_documents')
+      .update({ signed_pdf_sha256: sha, hash_source: 'server', pades_signed_at: seladoEm })
+      .eq('id', alvo.docId);
+    if (error) falhas.push(`signature_request_documents: ${error.message}`);
+
+    // ── O MESMO ARQUIVO, VISTO DO OUTRO LADO ────────────────────────────
+    //
+    // O envelope consolidado montado no servidor guarda o artefato nos DOIS
+    // lugares: a linha em `signature_request_documents` (que é por onde este
+    // selo chegou) e o ponteiro no signatário, que é o que a interface do
+    // consolidado lê. Selar reescreve os bytes; atualizar só um dos lados
+    // deixaria o outro anunciando o hash de ANTES do selo.
+    //
+    // O casamento é pelo CAMINHO, não pelo signatário: é o mesmo arquivo,
+    // logo é o mesmo hash. Envelope `per_document` não tem ponteiro no
+    // signatário e este update simplesmente não encontra linha — por isso ele
+    // não entra na lista de falhas quando afeta zero linhas.
+    const { error: erroPonteiro } = await supabase.from('signature_signers')
+      .update({ signed_pdf_sha256: sha, pades_signed_at: seladoEm })
+      .eq('signature_request_id', alvo.requestId)
+      .eq('signed_document_path', alvo.caminho);
+    if (erroPonteiro) falhas.push(`signature_signers (por caminho): ${erroPonteiro.message}`);
+  }
+
+  if (alvo.signerId) {
+    const { error } = await supabase.from('signature_signers')
+      .update({ signed_pdf_sha256: sha, pades_signed_at: seladoEm })
+      .eq('id', alvo.signerId);
+    if (error) falhas.push(`signature_signers (por id): ${error.message}`);
+  }
+
+  return falhas;
+}
+
+/**
+ * O QUE O BANCO DIZ SOBRE ESTE ARQUIVO — todos os lados, não um só.
+ *
+ * O mesmo PDF pode estar registrado em até três lugares: a linha do documento,
+ * o ponteiro do signatário casado pelo CAMINHO, e o signatário casado pelo id.
+ * A primeira versão do reparo olhava só a linha do documento; se o update dela
+ * tivesse funcionado e o do signatário não, a segunda chamada via a linha certa,
+ * concluía "está em dia" e ia embora — deixando o signatário para sempre com o
+ * hash de antes do selo e `pades_signed_at` nulo.
+ *
+ * Devolve as linhas desatualizadas e o carimbo que já existe, se existir.
+ */
+async function conferirMetadados(
+  supabase: any,
+  alvo: { docId: string | null; signerId: string | null; requestId: string; caminho: string },
+  sha: string,
+): Promise<{ desatualizados: string[]; carimboExistente: string | null }> {
+  const desatualizados: string[] = [];
+  let carimboExistente: string | null = null;
+
+  const registrar = (linha: any, ondeEsta: string) => {
+    if (!linha) return;
+    if (linha.pades_signed_at && !carimboExistente) carimboExistente = linha.pades_signed_at;
+    const shaGravado = String(linha.signed_pdf_sha256 ?? '').toUpperCase();
+    if (!linha.pades_signed_at || shaGravado !== sha) desatualizados.push(ondeEsta);
+  };
+
+  if (alvo.docId) {
+    const { data } = await supabase.from('signature_request_documents')
+      .select('signed_pdf_sha256, pades_signed_at').eq('id', alvo.docId).maybeSingle();
+    registrar(data, 'signature_request_documents');
+
+    // O ponteiro do signatário, casado pelo caminho. É o lado que o consolidado
+    // lê — e o que ficava para trás.
+    const { data: porCaminho } = await supabase.from('signature_signers')
+      .select('signed_pdf_sha256, pades_signed_at')
+      .eq('signature_request_id', alvo.requestId)
+      .eq('signed_document_path', alvo.caminho);
+    for (const linha of (porCaminho ?? [])) registrar(linha, 'signature_signers (por caminho)');
+  }
+
+  if (alvo.signerId) {
+    const { data } = await supabase.from('signature_signers')
+      .select('signed_pdf_sha256, pades_signed_at').eq('id', alvo.signerId).maybeSingle();
+    registrar(data, 'signature_signers (por id)');
+  }
+
+  return { desatualizados, carimboExistente };
+}
+
+/**
+ * A TRILHA DO SELO, garantida — e o erro dela é falha, não recado no console.
+ *
+ * O `insert` falhando só ia para o `console.error` e a resposta seguia
+ * `status: assinado`, HTTP 200. O finalizador contava a selagem como concluída,
+ * e a chamada seguinte caía em `ja_assinado` sem tentar de novo: a assinatura
+ * criptográfica ficava aplicada no arquivo e AUSENTE da trilha, para sempre.
+ *
+ * A conferência de duplicata é pelo SHA do arquivo selado, não pela ação: um
+ * envelope `per_document` tem um evento `pades_signed` por documento, e todos
+ * são legítimos. O que não pode é o MESMO arquivo aparecer duas vezes.
+ */
+async function garantirTrilhaPades(
+  supabase: any,
+  requestId: string,
+  signerId: string | null,
+  sha: string,
+): Promise<string | null> {
+  const { data: jaTem, error: erroBusca } = await supabase.from('signature_audit_log')
+    .select('id')
+    .eq('signature_request_id', requestId)
+    .eq('action', 'pades_signed')
+    .ilike('description', `%${sha}%`)
+    .maybeSingle();
+  if (erroBusca) return `consulta da trilha: ${erroBusca.message}`;
+  if (jaTem) return null;
+
+  const { error } = await supabase.from('signature_audit_log').insert({
+    signature_request_id: requestId,
+    signer_id: signerId,
+    action: 'pades_signed',
+    description: `Assinatura criptográfica PAdES aplicada ao documento. SHA-256 do arquivo selado: ${sha}.`,
+  });
+  return error ? `trilha de auditoria: ${error.message}` : null;
+}
+
 Deno.serve(async (req: Request) => {
   if (req.method === 'OPTIONS') return new Response('ok', { status: 200, headers: corsHeaders });
 
@@ -146,10 +297,50 @@ Deno.serve(async (req: Request) => {
     const shaAntes = await sha256Hex(originais);
 
     if (jaAssinado(originais)) {
+      // ── O REPARO ────────────────────────────────────────────────────────
+      //
+      // Este ramo era uma saída seca, e era ele que tornava permanente uma
+      // selagem cujos metadados não foram gravados: o arquivo já traz
+      // `/ByteRange`, então nenhuma tentativa posterior chegava aos updates.
+      // Agora, antes de sair, confere o que o banco diz sobre ESTE arquivo e
+      // completa o que estiver faltando ou desatualizado. `shaAntes` é o hash
+      // dos bytes que existem no Storage agora — é ele que tem de estar
+      // registrado.
+      const alvo = { docId, signerId, requestId, caminho };
+      const { desatualizados, carimboExistente } = await conferirMetadados(supabase, alvo, shaAntes);
+
+      const pendencias: string[] = [];
+      if (desatualizados.length > 0) {
+        // Carimbo que já existe é PRESERVADO: a data do selo é a de quando ele
+        // foi aplicado, não a de quando alguém percebeu que faltava anotar.
+        const falhas = await carimbarMetadados(
+          supabase, alvo, shaAntes, carimboExistente ?? new Date().toISOString(),
+        );
+        pendencias.push(...falhas);
+      }
+
+      // A trilha entra no reparo também: sem isso, um `insert` que falhou na
+      // selagem original nunca mais seria tentado — este ramo é o único por
+      // onde a segunda chamada passa.
+      const erroTrilha = await garantirTrilhaPades(supabase, requestId, signerId, shaAntes);
+      if (erroTrilha) pendencias.push(erroTrilha);
+
+      if (pendencias.length > 0) {
+        console.error('[pades-sign] reparo falhou:', pendencias);
+        return jsonResponse({
+          status: 'metadados_pendentes',
+          path: caminho,
+          sha256: shaAntes,
+          falhas: pendencias,
+          message: 'O PDF está selado, mas o registro do selo no banco não pôde ser gravado.',
+        }, 500);
+      }
+
       return jsonResponse({
         status: 'ja_assinado',
         path: caminho,
         sha256: shaAntes,
+        metadados: desatualizados.length > 0 ? `reparados (${desatualizados.join(', ')})` : 'em dia',
         message: 'Este PDF já traz assinatura criptográfica; assinar de novo invalidaria a primeira.',
       });
     }
@@ -205,29 +396,37 @@ Deno.serve(async (req: Request) => {
     // `pades_signed_at` é o que permite a página de conferência DIZER que o
     // arquivo está selado. Sem o carimbo, a prova existiria e ficaria invisível.
     const seladoEm = new Date().toISOString();
-    if (docId) {
-      // `hash_source: 'server'` porque foi o servidor que produziu estes bytes
-      // e mediu este hash. Sem isso o valor ficaria marcado como vindo do
-      // cliente — justamente o contrário do que acabou de acontecer.
-      await supabase.from('signature_request_documents')
-        .update({ signed_pdf_sha256: shaDepois, hash_source: 'server', pades_signed_at: seladoEm })
-        .eq('id', docId);
-    }
-    if (signerId) {
-      await supabase.from('signature_signers')
-        .update({ signed_pdf_sha256: shaDepois, pades_signed_at: seladoEm }).eq('id', signerId);
+    const falhasDoCarimbo = await carimbarMetadados(
+      supabase, { docId, signerId, requestId, caminho }, shaDepois, seladoEm,
+    );
+
+    // A trilha é PARTE do selo, não um recado. O `insert` falhando só ia para o
+    // console e a resposta seguia `assinado`, HTTP 200 — o finalizador contava a
+    // selagem como concluída e a chamada seguinte caía em `ja_assinado` sem
+    // tentar de novo. A assinatura criptográfica ficava aplicada no arquivo e
+    // AUSENTE da trilha, em definitivo. Agora ela desce para a mesma resposta.
+    const erroTrilha = await garantirTrilhaPades(supabase, requestId, signerId, shaDepois);
+    if (erroTrilha) falhasDoCarimbo.push(erroTrilha);
+
+    // Metadados que não gravaram são FALHA, não detalhe. O arquivo no Storage
+    // já é o selado; se o banco continuar anunciando o hash de antes, a
+    // conferência do envelope vai acusar violação de integridade contra um
+    // arquivo legítimo. Devolver 500 é o que faz a próxima tentativa acontecer
+    // — e ela agora conserta, porque o ramo `ja_assinado` repara.
+    if (falhasDoCarimbo.length > 0) {
+      console.error('[pades-sign] selo aplicado, registro NÃO gravado:', falhasDoCarimbo);
+      return jsonResponse({
+        status: 'metadados_pendentes',
+        path: destino,
+        sha256_antes: shaAntes,
+        sha256_depois: shaDepois,
+        selado_em: seladoEm,
+        falhas: falhasDoCarimbo,
+        message: 'O PDF foi selado e gravado, mas o registro do selo no banco falhou. '
+          + 'Chame esta função de novo com o mesmo código para reparar.',
+      }, 500);
     }
 
-    // O erro da auditoria é CAPTURADO e devolvido. Um insert que falha calado
-    // aqui produziria o pior estado possível: arquivo selado e trilha muda —
-    // que foi exatamente o que o CHECK sem `pades_signed` teria causado.
-    const { error: erroAuditoria } = await supabase.from('signature_audit_log').insert({
-      signature_request_id: requestId,
-      signer_id: signerId,
-      action: 'pades_signed',
-      description: `Assinatura criptográfica PAdES aplicada ao documento. SHA-256 do arquivo selado: ${shaDepois}.`,
-    });
-    if (erroAuditoria) console.error('[pades-sign] auditoria falhou:', erroAuditoria);
 
     return jsonResponse({
       status: 'assinado',
@@ -236,7 +435,7 @@ Deno.serve(async (req: Request) => {
       sha256_depois: shaDepois,
       bytes_depois: assinado.length,
       selado_em: seladoEm,
-      auditoria: erroAuditoria ? 'falhou' : 'registrada',
+      auditoria: 'registrada',
     });
   } catch (err) {
     console.error('[pades-sign] erro:', err);

@@ -33,6 +33,7 @@ import html2canvas from 'html2canvas';
 import jsPDF from 'jspdf';
 
 import {
+  campoDaFolhaNaFatia,
   CSS_PX_PER_INCH,
   planPagePlacement,
   pxToMm,
@@ -52,7 +53,8 @@ import {
 import { syncfusionDocxToPdf, syncfusionEngineUnavailableReason } from './syncfusionDocxToPdf';
 import {
   acharMarcadores,
-  campoEmPorcentagem,
+  campoCruEmPorcentagem,
+  enquadrarCampo,
   mascaraPara,
 } from './marcadoresDeAssinatura';
 
@@ -107,7 +109,12 @@ export type DocxToPdfOptions = {
 export type MarcadorDetectado = {
   /** `[[ASSINATURA]]` é 1; `[[ASSINATURA_2]]` é 2. */
   indiceDoAssinante: number;
-  /** Folha em que apareceu, contando de 1. */
+  /**
+   * PÁGINA DO PDF em que ele caiu, contando de 1 — não a folha do
+   * `docx-preview`. As duas só coincidem quando cada folha vira uma página; uma
+   * `<section>` sem quebra de página vira várias, e a posição do marcador é
+   * levada para a fatia certa em `campoDaFolhaNaFatia`.
+   */
   pagina: number;
   x_percent: number;
   y_percent: number;
@@ -375,7 +382,9 @@ function detectarMarcadoresNaFolha(
     const alvo = rect ?? ini.no.parentElement?.getBoundingClientRect() ?? null;
     if (!alvo) continue;
 
-    const campo = campoEmPorcentagem(
+    // CRU de propósito: o piso de tamanho é da PÁGINA, e a folha ainda pode
+    // virar várias. Quem enquadra é o laço da conversão, depois da fatia.
+    const campo = campoCruEmPorcentagem(
       {
         esquerda: alvo.left - base.left,
         topo: alvo.top - base.top,
@@ -485,9 +494,12 @@ export async function previewDocxToPdf(
       // de sumir das duas coisas. Se saísse só da imagem, o PDF continuaria
       // com "[[ASSINATURA]]" localizável pelo Ctrl+F — num documento que vale
       // como prova, isso é conteúdo que ninguém escreveu.
+      // Medidos AQUI, mas só numerados depois do `plan`: a folha ainda não sabe
+      // em quantas páginas vai ser fatiada, e é a fatia que dá a página certa.
+      let marcadoresDaFolha: MarcadorDetectado[] = [];
       if (detectarMarcadores) {
         try {
-          marcadores.push(...detectarMarcadoresNaFolha(sheet, index + 1));
+          marcadoresDaFolha = detectarMarcadoresNaFolha(sheet, index + 1);
         } catch (error) {
           // Detectar é melhoria; falhar aqui não pode custar a conversão, que é
           // o que o usuário pediu. Sem marcador, o fluxo cai no caminho de hoje.
@@ -522,6 +534,22 @@ export async function previewDocxToPdf(
         canvasWidthPx: canvas.width,
         canvasHeightPx: canvas.height,
       });
+
+      // ── O MARCADOR SÓ AGORA GANHA UMA PÁGINA ─────────────────────────────
+      // `pageCount` é quantas páginas as folhas anteriores já produziram, e a
+      // fatia diz em qual delas o `[[ASSINATURA]]` caiu. Antes gravava-se o
+      // número da FOLHA: numa `<section>` única fatiada em quatro, toda
+      // assinatura ia para a página 1, no meio do texto.
+      for (const marcador of marcadoresDaFolha) {
+        const { sliceIndex, ...campo } = campoDaFolhaNaFatia(marcador, plan, geometry.heightMm);
+        marcadores.push({
+          indiceDoAssinante: marcador.indiceDoAssinante,
+          pagina: pageCount + sliceIndex + 1,
+          // Só AQUI o piso de 8% × 4% faz sentido: ele fala de página, e é esta
+          // a primeira vez que a medida está em porcentagem de uma.
+          ...enquadrarCampo(campo),
+        });
+      }
 
       for (const slice of plan.slices) {
         if (pageCount > 0) {

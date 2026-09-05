@@ -23,11 +23,13 @@
  */
 import '../styles/syncfusion-editor.css';
 import { registerLicense } from '@syncfusion/ej2-base';
+import { registerSyncfusionLicenseOnce } from '../utils/syncfusionRuntime';
 import { DocumentEditorContainer, Toolbar } from '@syncfusion/ej2-documenteditor';
 import { attachLocalSpellChecker } from '../components/local-spell-checker';
 
-const licenseKey = String(import.meta.env.VITE_SYNCFUSION_LICENSE_KEY || '').trim();
-if (licenseKey) registerLicense(licenseKey);
+// Porta única: ver `syncfusionRuntime.ts` — `registerLicense` troca o
+// validador inteiro, então cada um registrar a sua chave apaga as outras.
+registerSyncfusionLicenseOnce(registerLicense);
 
 DocumentEditorContainer.Inject(Toolbar);
 

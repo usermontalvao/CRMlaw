@@ -110,7 +110,10 @@ async function processarJob(
   try {
     const [{ data: signer, error: signerError }, { data: request0, error: requestError }] = await Promise.all([
       supabase.from('signature_signers')
-        .select('id, public_token, status')
+        // `signed_document_path` entra por causa do envelope consolidado: é lá
+        // que o artefato dele pendura, e é como se sabe que o plano B (a
+        // montagem no navegador) chegou primeiro. Ver o passo do desempate.
+        .select('id, public_token, status, signed_document_path')
         .eq('id', job.signer_id).maybeSingle(),
       supabase.from('signature_requests')
         .select('id, signature_model, document_path, attachment_paths, deleted_at, archived_at, blocked_at')
@@ -121,10 +124,50 @@ async function processarJob(
       await reagendar(supabase, job, 'O signatário do job não está assinado ou não possui token.', true);
       return { job_id: job.id, status: 'failed', error: 'signatário inválido' };
     }
-    if (requestError || !request0 || request0.signature_model !== 'per_document') {
-      await reagendar(supabase, job, 'O envelope não existe ou não usa o modelo per_document.', true);
+    // ── QUAIS ENVELOPES ESTE WORKER MONTA ────────────────────────────────────
+    //
+    // `per_document` (o kit) desde sempre. E, desde 04/09/2026, também o
+    // envelope `consolidated` de UM documento — que é o que o assistente do
+    // módulo de Assinaturas cria quando não há anexo, e que até então caía
+    // inteiro no navegador de quem assina porque NINGUÉM o chamava aqui.
+    //
+    // O consolidado COM ANEXO continua de fora, e isso é decisão, não
+    // esquecimento: o artefato dele é um PDF único que concatena principal +
+    // anexos + laudo, e esta montagem é POR DOCUMENTO. Trocar um pelo outro
+    // mudaria a forma do arquivo entregue ao cliente.
+    const anexosDoEnvelope = Array.isArray(request0?.attachment_paths)
+      ? request0.attachment_paths.filter((p: unknown) => String(p ?? '').trim()).length
+      : 0;
+    const modeloAceito = request0?.signature_model === 'per_document'
+      || anexosDoEnvelope === 0;
+    if (requestError || !request0 || !modeloAceito) {
+      await reagendar(supabase, job,
+        'O envelope não existe ou usa um modelo que este worker não monta '
+        + `(${request0?.signature_model ?? 'desconhecido'} com ${anexosDoEnvelope} anexo(s)).`, true);
       return { job_id: job.id, status: 'failed', error: 'envelope inválido' };
     }
+
+    // ── O DESEMPATE COM O PLANO B ────────────────────────────────────────────
+    //
+    // No consolidado o caminho antigo (montar no navegador) continua inteiro,
+    // como rede. Se ele chegou primeiro, o ponteiro do signatário já está
+    // gravado e é one-shot: montar de novo aqui produziria um SEGUNDO PDF no
+    // bucket que nenhuma linha do banco aponta — arquivo órfão num acervo
+    // probatório. O job encerra dizendo o que encontrou.
+    if (request0.signature_model !== 'per_document' && signer.signed_document_path) {
+      console.log('[montar-envelope] consolidado já montado no navegador; nada a fazer',
+        job.signature_request_id);
+      await atualizarJob(supabase, job.id, {
+        status: 'completed',
+        stage: 'montado no navegador antes do servidor',
+        completed_document_count: 1,
+        lock_expires_at: null,
+        last_error: null,
+        completed_at: new Date().toISOString(),
+      });
+      return { job_id: job.id, status: 'completed', montado_no_navegador: true };
+    }
+
     if (request0.deleted_at || request0.archived_at || request0.blocked_at) {
       await reagendar(supabase, job, 'O envelope foi removido, arquivado ou bloqueado.', true);
       return { job_id: job.id, status: 'failed', error: 'envelope indisponível' };
@@ -193,6 +236,36 @@ async function processarJob(
     if (notPdf.length > 0) {
       await reagendar(supabase, job, `Originais congelados não são PDF: ${notPdf.join(', ')}.`, true);
       return { job_id: job.id, status: 'failed', not_pdf: notPdf };
+    }
+
+    // ── A SEGUNDA OLHADA NO DESEMPATE ────────────────────────────────────────
+    //
+    // O desempate lá em cima acontece ANTES de congelar originais, converter e
+    // montar — trabalho que leva dezenas de segundos. Nesse intervalo o plano B
+    // do navegador pode ter terminado e gravado o ponteiro. Montar assim mesmo
+    // produziria uma linha em `signature_request_documents` apontando um PDF
+    // que ninguém entrega, ao lado do que o signatário recebeu: dois artefatos
+    // com hashes diferentes para o mesmo ato.
+    //
+    // A página pública já não monta enquanto o job vive, então esta janela é
+    // estreita — mas ela é barata de fechar e o que está do outro lado é um
+    // acervo probatório.
+    if (request0.signature_model !== 'per_document') {
+      const { data: agora } = await supabase.from('signature_signers')
+        .select('signed_document_path').eq('id', job.signer_id).maybeSingle();
+      if ((agora as any)?.signed_document_path) {
+        console.log('[montar-envelope] o navegador terminou durante o preparo; nada a montar',
+          job.signature_request_id);
+        await atualizarJob(supabase, job.id, {
+          status: 'completed',
+          stage: 'montado no navegador durante o preparo',
+          completed_document_count: 1,
+          lock_expires_at: null,
+          last_error: null,
+          completed_at: new Date().toISOString(),
+        });
+        return { job_id: job.id, status: 'completed', montado_no_navegador: true };
+      }
     }
 
     await atualizarJob(supabase, job.id, { stage: 'montando documentos assinados' });

@@ -26,7 +26,7 @@ import { desenharCapaDoLaudo, type SignatarioNaCapa } from './laudoCapa.ts';
 import { desenharPaginaDoSignatario } from './laudoSignatario.ts';
 import { desenharTrilha } from './laudoTrilha.ts';
 import { fichaDaLinha, provasDoSignatario, type LinhaDeSignatarioNoLaudo } from './dossieDoSignatario.ts';
-import { formatarDataHoraDoEscritorio } from './dadosDoSignatario.ts';
+import { formatarDataHoraNosDoisFusos } from './dadosDoSignatario.ts';
 import type { EventoDaTrilha } from './linhaDoTempo.ts';
 import type { FerramentasDeForma, PaginaPdf, PaletaDoLaudo } from './laudoDesign.ts';
 import type { MatrizDoQr } from './rodape.ts';
@@ -103,7 +103,7 @@ export function desenharLaudo(entrada: EntradaDoLaudo): ResumoDoLaudo {
   const naCapa: SignatarioNaCapa[] = signatarios.map(({ linha, rubrica }) => ({
     nome: linha.name,
     papel: linha.role ?? null,
-    assinadoEm: formatarDataHoraDoEscritorio(linha.signed_at, { comSegundos: true }),
+    assinadoEm: formatarDataHoraNosDoisFusos(linha.signed_at, { comSegundos: true }),
     provas: provasDoSignatario(linha),
     rubrica: rubrica ?? null,
   }));
@@ -130,7 +130,7 @@ export function desenharLaudo(entrada: EntradaDoLaudo): ResumoDoLaudo {
         nome: s.linha.name,
         ficha: fichaDaLinha(
           s.linha,
-          formatarDataHoraDoEscritorio(s.linha.signed_at, { comSegundos: true }),
+          formatarDataHoraNosDoisFusos(s.linha.signed_at, { comSegundos: true }),
         ),
         foto: s.foto ?? null,
         qr: s.qr ?? null,

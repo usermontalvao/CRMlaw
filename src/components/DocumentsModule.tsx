@@ -42,6 +42,7 @@ import { documentTemplateService } from '../services/documentTemplate.service';
 import { clientService } from '../services/client.service';
 import { processService } from '../services/process.service';
 import { signatureService } from '../services/signature.service';
+import { congelarOriginais } from '../services/congelamentoDeOriginal.service';
 import { settingsService } from '../services/settings.service';
 import { supabase } from '../config/supabase';
 import { buildPublicFillUrl, buildPublicPermalinkUrl, buildPublicSigningUrl } from '../utils/publicAppUrl';
@@ -65,7 +66,7 @@ import StandardPetitionsModule from './StandardPetitionsModule';
 import type { DocumentTemplate, CreateDocumentTemplateDTO, UpsertTemplateCustomFieldDTO } from '../types/document.types';
 import type { Client } from '../types/client.types';
 import type { Process } from '../types/process.types';
-import type { SignerAuthMethod } from '../types/signature.types';
+import type { SignatureRequestWithSigners, SignerAuthMethod } from '../types/signature.types';
 import { LAYER } from '../styles/layers';
 import { openWhatsAppChat } from '../utils/whatsappChat';
 import { buildWhatsappUrl } from '../utils/whatsapp';
@@ -1660,11 +1661,12 @@ const DocumentsModule: React.FC<DocumentsModuleProps> = ({ onNavigateToModule })
     }
   };
 
-  // Enviar para assinatura - Envia DOCXs separados (documento principal + anexos)
+  // Enviar para assinatura — converte e congela todos os arquivos antes do link existir.
   const handleSendForSignature = async () => {
     if (!selectedTemplate || !selectedClient || !generatedDocBlob) return;
     if (!ensurePermission({ module: 'assinaturas', action: 'create' })) return;
 
+    let signatureRequest: SignatureRequestWithSigners | null = null;
     try {
       setPreparingSignature(true);
       setShowDocOptionsModal(false);
@@ -1680,68 +1682,68 @@ const DocumentsModule: React.FC<DocumentsModuleProps> = ({ onNavigateToModule })
       };
       const resolvedAuthMethod: SignerAuthMethod = (sigCfg && authMethodMapDocs[sigCfg.default_auth_method]) || 'signature_only';
       
-      // 1. Fazer upload do documento principal gerado (DOCX)
+      // O Word não entra mais no envelope. Documento principal e anexos são
+      // convertidos pela mesma paginação usada no designer e enviados como PDF;
+      // depois o servidor relê os bytes e só então libera a solicitação.
       const fileName = `${generatedDocName}.docx`;
       const file = new File([generatedDocBlob], fileName, { type: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document' });
-      const documentPath = await signatureService.uploadDocument(file);
-      
-      // 2. Carregar, processar variáveis e fazer upload dos documentos anexos do template
       const templateFiles = await documentTemplateService.listTemplateFiles(selectedTemplate.id);
-      const attachmentPaths: string[] = [];
+      const processedAttachments: Array<{ file: File; templateFile: (typeof templateFiles)[number] }> = [];
       const placeholders = buildPlaceholderMap(selectedClient);
       
       for (const templateFile of templateFiles) {
-        try {
-          const fileBlob = await documentTemplateService.downloadTemplateFileById(templateFile.id);
-          
-          const isDocx = templateFile.file_name.toLowerCase().endsWith('.docx') || 
-                         templateFile.mime_type === 'application/vnd.openxmlformats-officedocument.wordprocessingml.document';
-          
-          let processedBlob: Blob;
-          
-          if (isDocx) {
-            const arrayBuffer = await fileBlob.arrayBuffer();
-            const zip = new PizZip(arrayBuffer);
-            const doc = new Docxtemplater(zip, {
-              paragraphLoop: true,
-              linebreaks: true,
-              delimiters: { start: '[[', end: ']]' },
-              nullGetter: (part: any) => {
-                const key = typeof part?.value === 'string' ? part.value.trim() : '';
-                if (/^ASSINATURA(_\d+)?$/i.test(key)) return `[[${key}]]`;
-                return '';
-              },
-            });
-            
-            doc.render(placeholders);
-            
-            processedBlob = doc.getZip().generate({
-              type: 'blob',
-              mimeType: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
-            });
-          } else {
-            processedBlob = fileBlob;
-          }
-          
-          const attachmentFile = new File([processedBlob], templateFile.file_name, { type: templateFile.mime_type });
-          const attachmentPath = await signatureService.uploadDocument(attachmentFile);
-          attachmentPaths.push(attachmentPath);
-          console.log(`📎 Anexo enviado: ${templateFile.file_name}`);
-        } catch (err) {
-          console.warn(`Erro ao processar anexo ${templateFile.file_name}:`, err);
-        }
-      }
-      
-      console.log('✅ Documento e anexos enviados:', documentPath, attachmentPaths);
+        const fileBlob = await documentTemplateService.downloadTemplateFileById(templateFile.id);
+        const isDocx = templateFile.file_name.toLowerCase().endsWith('.docx') ||
+                       templateFile.mime_type === 'application/vnd.openxmlformats-officedocument.wordprocessingml.document';
 
-      // Criar solicitação e já gerar o link público (documento já possui [[ASSINATURA]])
+        let processedBlob: Blob;
+        if (isDocx) {
+          const arrayBuffer = await fileBlob.arrayBuffer();
+          const zip = new PizZip(arrayBuffer);
+          const doc = new Docxtemplater(zip, {
+            paragraphLoop: true,
+            linebreaks: true,
+            delimiters: { start: '[[', end: ']]' },
+            nullGetter: (part: any) => {
+              const key = typeof part?.value === 'string' ? part.value.trim() : '';
+              if (/^ASSINATURA(_\d+)?$/i.test(key)) return `[[${key}]]`;
+              return '';
+            },
+          });
+          doc.render(placeholders);
+          processedBlob = doc.getZip().generate({
+            type: 'blob',
+            mimeType: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+          });
+        } else {
+          processedBlob = fileBlob;
+        }
+
+        processedAttachments.push({
+          file: new File([processedBlob], templateFile.file_name, { type: templateFile.mime_type }),
+          templateFile,
+        });
+      }
+
       const documentId = crypto.randomUUID();
-      
-      const signatureRequest = await signatureService.createRequest({
+      const congelado = await congelarOriginais([
+        { nome: fileName, arquivo: file },
+        ...processedAttachments.map(({ file: attachmentFile }) => ({
+          nome: attachmentFile.name,
+          arquivo: attachmentFile,
+        })),
+      ], { documentId });
+
+      console.log('✅ PDFs preparados para o envelope:',
+        congelado.caminhoPrincipal, congelado.caminhosDosAnexos);
+
+      const createdRequest = await signatureService.createRequest({
         document_id: documentId,
-        document_name: `${selectedTemplate.name} - ${selectedClient.full_name}`,
-        document_path: documentPath,
-        attachment_paths: attachmentPaths.length > 0 ? attachmentPaths : null,
+        document_name: congelado.nomePrincipal,
+        document_path: congelado.caminhoPrincipal,
+        attachment_paths: congelado.caminhosDosAnexos.length > 0
+          ? congelado.caminhosDosAnexos
+          : null,
         client_id: selectedClient.id,
         client_name: selectedClient.full_name,
         auth_method: resolvedAuthMethod,
@@ -1754,9 +1756,10 @@ const DocumentsModule: React.FC<DocumentsModuleProps> = ({ onNavigateToModule })
           role: 'Signatário',
           order: 1,
         }],
-      });
+      }, { sourceProvenance: congelado.proveniencia });
+      signatureRequest = createdRequest;
       
-      const signerToken = signatureRequest.signers[0]?.public_token;
+      const signerToken = createdRequest.signers[0]?.public_token;
 
       const manualSignatureFields = [
         ...(selectedTemplate.signature_field_config
@@ -1767,7 +1770,7 @@ const DocumentsModule: React.FC<DocumentsModuleProps> = ({ onNavigateToModule })
               .filter((field) => field !== null)
               .map((field) => ({
                 document_id: 'main',
-                signer_id: signatureRequest.signers[0]?.id ?? null,
+                signer_id: createdRequest.signers[0]?.id ?? null,
                 field_type: 'signature' as const,
                 page_number: field.page || 1,
                 x_percent: field.x_percent || 0,
@@ -1776,7 +1779,7 @@ const DocumentsModule: React.FC<DocumentsModuleProps> = ({ onNavigateToModule })
                 h_percent: field.height_percent || 8,
               }))
           : []),
-        ...templateFiles.flatMap((templateFile, index) => {
+        ...processedAttachments.flatMap(({ templateFile }, index) => {
           const config = templateFile.signature_field_config;
           const configArray = config
             ? (Array.isArray(config) ? config : [config]).filter((field) => field !== null)
@@ -1784,7 +1787,7 @@ const DocumentsModule: React.FC<DocumentsModuleProps> = ({ onNavigateToModule })
 
           return configArray.map((field) => ({
             document_id: `attachment-${index}`,
-            signer_id: signatureRequest.signers[0]?.id ?? null,
+            signer_id: createdRequest.signers[0]?.id ?? null,
             field_type: 'signature' as const,
             page_number: field.page || 1,
             x_percent: field.x_percent || 0,
@@ -1795,8 +1798,31 @@ const DocumentsModule: React.FC<DocumentsModuleProps> = ({ onNavigateToModule })
         }),
       ];
 
-      if (manualSignatureFields.length > 0) {
-        await signatureFieldsService.upsertFields(signatureRequest.id, manualSignatureFields);
+      // Marcadores automáticos foram ocultados na conversão para não aparecerem
+      // no PDF. Transforme-os em campos, exceto no documento que já tem posição
+      // manual — a mesma precedência usada no assistente de Assinaturas.
+      const documentosComCampoManual = new Set(
+        manualSignatureFields.map((field) => field.document_id),
+      );
+      const markerSignatureFields = Object.entries(congelado.marcadores).flatMap(([documentKey, markers]) => {
+        if (documentosComCampoManual.has(documentKey)) return [];
+        return markers
+          .filter((marker) => marker.indiceDoAssinante === 1)
+          .map((marker) => ({
+            document_id: documentKey,
+            signer_id: createdRequest.signers[0]?.id ?? null,
+            field_type: 'signature' as const,
+            page_number: marker.pagina,
+            x_percent: marker.x_percent,
+            y_percent: marker.y_percent,
+            w_percent: marker.w_percent,
+            h_percent: marker.h_percent,
+          }));
+      });
+      const signatureFields = [...manualSignatureFields, ...markerSignatureFields];
+
+      if (signatureFields.length > 0) {
+        await signatureFieldsService.upsertFields(createdRequest.id, signatureFields);
       }
       
       if (!signerToken) {
@@ -1822,6 +1848,13 @@ const DocumentsModule: React.FC<DocumentsModuleProps> = ({ onNavigateToModule })
       setGeneratedAttachments([]);
       
     } catch (err: any) {
+      if (signatureRequest?.id) {
+        try {
+          await signatureService.permanentlyDeleteRequest(signatureRequest.id, true);
+        } catch (rollbackError) {
+          console.error('Falha ao desfazer envelope incompleto:', rollbackError);
+        }
+      }
       console.error('Erro ao criar solicitação de assinatura:', err);
       alert('Erro ao criar solicitação de assinatura: ' + (err.message || 'Erro desconhecido'));
     } finally {

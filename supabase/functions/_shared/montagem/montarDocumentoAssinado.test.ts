@@ -10,7 +10,11 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { LineCapStyle, PDFDocument, PDFString, StandardFonts, degrees, rgb } from 'pdf-lib';
 
-import { montarDocumentoAssinado, type CampoDeAssinatura } from './montarDocumentoAssinado.ts';
+import {
+  montarDocumentoAssinado,
+  taparFaixaRevelada,
+  type CampoDeAssinatura,
+} from './montarDocumentoAssinado.ts';
 import { ALTURA_DA_FAIXA_DO_RODAPE } from './geometria.ts';
 import { paletaDoLaudo } from './laudoDesign.ts';
 import { WORDMARK_RATIO, wordmarkPngBytes } from './wordmark.ts';
@@ -231,4 +235,40 @@ test('dois signatários rendem duas páginas de dossiê', async () => {
     resultado.decisoes.map((d) => d.decisao),
     ['assinatura-do-titular', 'assinatura-do-titular'],
   );
+});
+
+// ── A faixa nasce tapada ────────────────────────────────────────────────────
+
+test('a máscara cobre a faixa inteira, ancorada na origem FÍSICA da página', () => {
+  // Crescer o MediaBox não cria papel em branco: descobre o que o recorte
+  // escondia. Uma página cuja última linha transborda o pé da folha — o que a
+  // conversão por fatias produz o tempo todo — passava a mostrar esse
+  // excedente, e o rodapé ficava por cima dele.
+  const desenhos: Array<Record<string, unknown>> = [];
+  const pagina = {
+    getMediaBox: () => ({
+      x: 0, y: -ALTURA_DA_FAIXA_DO_RODAPE,
+      width: A4[0], height: A4[1] + ALTURA_DA_FAIXA_DO_RODAPE,
+    }),
+    drawRectangle: (r: Record<string, unknown>) => desenhos.push(r),
+  };
+
+  taparFaixaRevelada(pagina, 'branco');
+
+  assert.equal(desenhos.length, 1);
+  const [r] = desenhos;
+  assert.equal(r.y, -ALTURA_DA_FAIXA_DO_RODAPE, 'com y=0 a máscara tapava o conteúdo e não a sobra');
+  assert.equal(r.height, ALTURA_DA_FAIXA_DO_RODAPE);
+  assert.equal(r.width, A4[0], 'de borda a borda: o transbordo acontece em qualquer x');
+  assert.equal(r.color, 'branco');
+});
+
+test('a máscara acompanha a faixa se a altura dela mudar', () => {
+  const desenhos: Array<Record<string, unknown>> = [];
+  const pagina = {
+    getMediaBox: () => ({ x: 12, y: -40, width: 500, height: 800 }),
+    drawRectangle: (r: Record<string, unknown>) => desenhos.push(r),
+  };
+  taparFaixaRevelada(pagina, 'branco', 40);
+  assert.deepEqual(desenhos, [{ x: 12, y: -40, width: 500, height: 40, color: 'branco' }]);
 });

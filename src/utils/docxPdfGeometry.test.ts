@@ -5,6 +5,7 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 
 import {
+  campoDaFolhaNaFatia,
   cssLengthToMm,
   planPagePlacement,
   pdfPageFormat,
@@ -212,4 +213,74 @@ test('documento absurdamente longo é limitado por maxSlices', () => {
     maxSlices: 50,
   });
   assert.equal(plan.slices.length, 50);
+});
+
+// --- campoDaFolhaNaFatia ----------------------------------------------------
+
+test('folha única fatiada em quatro: a assinatura do fim vai para a página 4', () => {
+  // O caso real: contrato sem quebra de página explícita sai numa `<section>`
+  // só, de ~4 folhas de altura. O `[[ASSINATURA]]` ficava com a página da
+  // FOLHA (1) e era carimbado no pé da primeira página, sobre o texto.
+  const plan = planPagePlacement({
+    pageWidthMm: 210, pageHeightMm: 297, canvasWidthPx: 1000, canvasHeightPx: 5657,
+  });
+  assert.equal(plan.slices.length, 4);
+
+  const campo = campoDaFolhaNaFatia(
+    { x_percent: 46, y_percent: 92.66, w_percent: 12.7, h_percent: 1 },
+    plan, 297,
+  );
+  assert.equal(campo.sliceIndex, 3, 'a 92,66% de quatro folhas é a quarta');
+  // 92,66% de 1188 mm = 1100,8 mm; menos três folhas (891) = 209,8 mm.
+  assertMm((campo.y_percent / 100) * 297, 209.8);
+  assert.equal(campo.x_percent, 46, 'a horizontal não muda: a largura é a mesma');
+});
+
+test('a altura do campo também é reescrita para a página', () => {
+  const plan = planPagePlacement({
+    pageWidthMm: 210, pageHeightMm: 297, canvasWidthPx: 1000, canvasHeightPx: 5657,
+  });
+  const campo = campoDaFolhaNaFatia(
+    { x_percent: 0, y_percent: 0, w_percent: 10, h_percent: 1 },
+    plan, 297,
+  );
+  // 1% de quatro folhas é ~4% de uma. Sem isso a rubrica sairia quatro vezes
+  // menor do que foi marcada.
+  assertMm((campo.h_percent / 100) * 297, 11.88);
+});
+
+test('folha que vira uma página só continua batendo', () => {
+  const plan = planPagePlacement({
+    pageWidthMm: 210, pageHeightMm: 297, canvasWidthPx: 2000, canvasHeightPx: 2829,
+  });
+  const campo = campoDaFolhaNaFatia(
+    { x_percent: 20, y_percent: 50, w_percent: 30, h_percent: 4 },
+    plan, 297,
+  );
+  assert.equal(campo.sliceIndex, 0);
+  assert.ok(Math.abs(campo.y_percent - 50) < 0.2, `esperado ~50%, recebido ${campo.y_percent}`);
+});
+
+test('campo na primeira metade fica na primeira fatia', () => {
+  const plan = planPagePlacement({
+    pageWidthMm: 210, pageHeightMm: 297, canvasWidthPx: 2000, canvasHeightPx: 2829 * 2,
+  });
+  const campo = campoDaFolhaNaFatia(
+    { x_percent: 10, y_percent: 25, w_percent: 20, h_percent: 2 },
+    plan, 297,
+  );
+  assert.equal(campo.sliceIndex, 0);
+  assert.ok(Math.abs(campo.y_percent - 50) < 1, `esperado ~50% da página 1, recebido ${campo.y_percent}`);
+});
+
+test('medida fora da imagem não inventa uma página que não existe', () => {
+  const plan = planPagePlacement({
+    pageWidthMm: 210, pageHeightMm: 297, canvasWidthPx: 2000, canvasHeightPx: 2829,
+  });
+  const campo = campoDaFolhaNaFatia(
+    { x_percent: 0, y_percent: 400, w_percent: 10, h_percent: 1 },
+    plan, 297,
+  );
+  assert.equal(campo.sliceIndex, 0, 'só existe uma fatia — é nela que o campo cai');
+  assert.ok(campo.y_percent <= 100);
 });

@@ -108,16 +108,73 @@ export function formatarDataHoraDoEscritorio(
   valor: string | Date | null | undefined,
   opcoes?: { comSegundos?: boolean },
 ): string {
-  const data = paraData(valor);
-  if (!data) return 'Nao informado';
+  const partes = partesNoFuso(valor, FUSO_DO_ESCRITORIO, opcoes);
+  return partes ? `${partes.data}, ${partes.hora}` : 'Nao informado';
+}
 
-  return new Intl.DateTimeFormat('pt-BR', {
-    timeZone: FUSO_DO_ESCRITORIO,
-    day: '2-digit',
-    month: '2-digit',
-    year: 'numeric',
-    hour: '2-digit',
-    minute: '2-digit',
+/**
+ * O fuso de BRASÍLIA — o relógio dos prazos processuais.
+ *
+ * O escritório é UTC-4 e Brasília é UTC-3: uma hora de diferença, o ano
+ * inteiro (o horário de verão acabou em 2019). Num documento que vira prova,
+ * "17:57" sem dizer de onde é uma afirmação ambígua, e a ambiguidade cai
+ * justamente sobre a hora de um ato jurídico.
+ */
+export const FUSO_DE_BRASILIA = 'America/Sao_Paulo';
+
+/** Data e hora separadas, num fuso. `null` quando não há instante. */
+function partesNoFuso(
+  valor: string | Date | null | undefined,
+  fuso: string,
+  opcoes?: { comSegundos?: boolean },
+): { data: string; hora: string } | null {
+  const data = paraData(valor);
+  if (!data) return null;
+
+  // `formatToParts` em vez de partir a string formatada: o separador entre data
+  // e hora muda com a implementação de `Intl`, e um `split(', ')` que falhasse
+  // devolveria hora vazia sem erro nenhum.
+  const partes = new Intl.DateTimeFormat('pt-BR', {
+    timeZone: fuso,
+    day: '2-digit', month: '2-digit', year: 'numeric',
+    hour: '2-digit', minute: '2-digit',
     ...(opcoes?.comSegundos ? { second: '2-digit' as const } : {}),
-  }).format(data);
+  }).formatToParts(data);
+
+  const de = (tipo: string) => partes.find((p) => p.type === tipo)?.value ?? '';
+  const hora = [de('hour'), de('minute'), ...(opcoes?.comSegundos ? [de('second')] : [])]
+    .filter(Boolean).join(':');
+  return { data: `${de('day')}/${de('month')}/${de('year')}`, hora };
+}
+
+/** Data e hora no fuso de Brasília. */
+export function formatarDataHoraDeBrasilia(
+  valor: string | Date | null | undefined,
+  opcoes?: { comSegundos?: boolean },
+): string {
+  const partes = partesNoFuso(valor, FUSO_DE_BRASILIA, opcoes);
+  return partes ? `${partes.data}, ${partes.hora}` : 'Nao informado';
+}
+
+/**
+ * O MESMO instante nos dois relógios, para os momentos que o laudo AFIRMA.
+ *
+ * A data de Brasília só é repetida quando ela DIFERE — e ela difere de
+ * verdade: das 23h às 24h em Cuiabá, Brasília já virou o dia. Omitir a data
+ * nessa faixa faria o documento dizer que o ato foi praticado às 00:12 do dia
+ * anterior. É a hora em que menos se quer estar errado, e é por isso que a
+ * regra tem teste próprio.
+ */
+export function formatarDataHoraNosDoisFusos(
+  valor: string | Date | null | undefined,
+  opcoes?: { comSegundos?: boolean },
+): string {
+  const cuiaba = partesNoFuso(valor, FUSO_DO_ESCRITORIO, opcoes);
+  const brasilia = partesNoFuso(valor, FUSO_DE_BRASILIA, opcoes);
+  if (!cuiaba || !brasilia) return 'Nao informado';
+
+  const ladoDeBrasilia = brasilia.data === cuiaba.data
+    ? brasilia.hora
+    : `${brasilia.data}, ${brasilia.hora}`;
+  return `${cuiaba.data}, ${cuiaba.hora} (Cuiabá) · ${ladoDeBrasilia} (Brasília)`;
 }

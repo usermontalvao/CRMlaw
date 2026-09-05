@@ -12,6 +12,7 @@ import {
   CollaborativeEditingHandler,
 } from '@syncfusion/ej2-react-documenteditor';
 import '../styles/syncfusion-editor.css';
+import { registerSyncfusionLicenseOnce } from '../utils/syncfusionRuntime';
 import {
   getCachedSuggestions,
   setCachedSuggestions,
@@ -55,10 +56,13 @@ import {
 // Prune entradas expiradas na inicialização do módulo
 pruneExpiredEntries();
 
-const syncfusionLicenseKey = String(import.meta.env.VITE_SYNCFUSION_LICENSE_KEY || '').trim();
-if (syncfusionLicenseKey) {
-  registerLicense(syncfusionLicenseKey);
-}
+// A licença passa pela PORTA ÚNICA de `syncfusionRuntime`, e não por um
+// `registerLicense` daqui: a chamada TROCA o validador inteiro do EJ2, então
+// quem registra só a própria chave apaga as das outras variáveis. O editor e a
+// conversão Word -> PDF vivem na mesma página do CRM — registrar em separado
+// deixaria um dos dois sem licença, calado, com o aviso de avaliação impresso
+// por cima da folha.
+registerSyncfusionLicenseOnce(registerLicense);
 
 // Inject required modules
 DocumentEditorContainerComponent.Inject(Toolbar);

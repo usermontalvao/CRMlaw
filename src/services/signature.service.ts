@@ -530,7 +530,10 @@ class SignatureService {
     };
   }
 
-  async createRequest(payload: CreateSignatureRequestDTO): Promise<SignatureRequestWithSigners> {
+  async createRequest(
+    payload: CreateSignatureRequestDTO,
+    options: { sourceProvenance?: Record<string, unknown> } = {},
+  ): Promise<SignatureRequestWithSigners> {
     const { data: userData } = await supabase.auth.getUser();
     if (!userData.user) throw new Error('Usuário não autenticado');
 
@@ -585,7 +588,7 @@ class SignatureService {
     // Registrar no audit log
     await this.addAuditLog(request.id, null, 'created', 'Solicitação de assinatura criada');
 
-    // ── CONGELAR A ORIGEM, PARA TODO ENVELOPE CRIADO PELO FRONT ──────────────
+    // ── CONGELAR A ORIGEM ANTES DE LIBERAR O ENVELOPE ───────────────────────
     //
     // AQUI, e não em cada tela, por um motivo aprendido na marra em 04/09/2026:
     // o congelamento foi enganchado no `template-fill` e no assistente, e ficou
@@ -598,13 +601,61 @@ class SignatureService {
     // (Documentos, assistente de Assinaturas e o que vier depois). Enganchar
     // por tela é garantia de esquecer uma.
     //
-    // FALHA MACIA: sem congelamento o envelope funciona como sempre funcionou —
-    // a montagem cai no navegador. Derrubar a criação porque o conversor está
-    // fora do ar trocaria "vai demorar mais" por "o cliente não recebeu nada".
-    //
-    // IDEMPOTENTE: a função pula documento que já tem linha congelada, então
-    // chamar de novo (ou depois do congelamento do assistente) não refaz nada.
-    void this.congelarOrigemNoServidor(request.id);
+    // Para `per_document`, falhar macio devolvia exatamente o defeito que esta
+    // migração existe para remover: o link nascia antes do PDF congelado e a
+    // assinatura caía silenciosamente no navegador. Agora a criação só retorna
+    // depois que o servidor releu TODOS os PDFs, calculou seus hashes e gravou
+    // uma linha por documento. Se isso não acontecer, a solicitação incompleta
+    // é desfeita e nenhum link é entregue.
+    if (requestData.signature_model === 'per_document') {
+      try {
+        await this.exigirOrigemCongeladaNoServidor(
+          request.id,
+          1 + (requestData.attachment_paths?.length ?? 0),
+          options.sourceProvenance,
+        );
+      } catch (error) {
+        const { error: rollbackError } = await supabase
+          .from(this.requestsTable)
+          .delete()
+          .eq('id', request.id);
+        if (rollbackError) {
+          console.error('[congelamento] falha ao desfazer envelope incompleto:', rollbackError);
+        }
+        throw error;
+      }
+    } else if ((requestData.attachment_paths?.length ?? 0) === 0) {
+      // ── O ENVELOPE DE UM DOCUMENTO SÓ (consolidated) ───────────────────────
+      //
+      // Este ramo é o conserto de 04/09/2026. O congelamento estava enganchado
+      // SÓ no `per_document`, então o envelope que o assistente cria sem anexo
+      // — que nasce `consolidated` — chegava à assinatura com
+      // `signature_source_files` vazia. Sem original congelado o servidor não
+      // monta (e está certo em não montar: é o arquivo que ele mesmo conferiu),
+      // e a assinatura caía inteira no navegador sem ninguém perceber. Foi
+      // exatamente o que aconteceu no envelope
+      // 750a3bce-58b1-4d8c-b159-c6f943d62e87.
+      //
+      // POR QUE AQUI A FALHA É MACIA, e no `per_document` não é: lá a montagem
+      // no navegador foi REMOVIDA, então um envelope sem original congelado é
+      // um envelope que ninguém consegue assinar — melhor não nascer. Aqui o
+      // caminho antigo continua inteiro como plano B, e derrubar a criação do
+      // envelope por causa dele seria trocar um defeito silencioso por uma
+      // regressão barulhenta. O worker `montar-envelope-assinado` ainda tenta
+      // congelar sozinho antes de montar, então isto é pressa, não garantia.
+      try {
+        const parecer = await this.congelarOriginalNoServidor(
+          request.id, options.sourceProvenance,
+        );
+        if (parecer.parecer !== 'INTEGRO') {
+          console.warn('[congelamento] envelope consolidado sem origem congelada:',
+            parecer.parecer, parecer.erro ?? '',
+            '— a montagem no servidor vai tentar congelar de novo antes de montar.');
+        }
+      } catch (error) {
+        console.warn('[congelamento] falha ao congelar envelope consolidado:', error);
+      }
+    }
 
     return {
       ...request,
@@ -613,30 +664,35 @@ class SignatureService {
   }
 
   /**
-   * Pede ao servidor que congele a origem do envelope.
+   * Barreira de publicação do envelope `per_document`.
    *
-   * NÃO é esperado (`void` no chamador): o congelamento converte `.docx` em PDF
-   * no `docs.jurius-api.com`, o que leva segundos por arquivo. Fazer quem cria o
-   * envelope esperar por isso atrasaria a tela sem necessidade — o link de
-   * assinatura já pode ser enviado, e o congelamento termina sozinho antes de
-   * alguém abrir.
-   *
-   * Nunca estoura: o `catch` existe para que uma falha aqui não derrube a
-   * criação do envelope, que já aconteceu e é o que importa.
+   * O parecer da Edge Function não basta sozinho: versões antigas podiam dizer
+   * `INTEGRO` mesmo se um INSERT isolado falhasse. Por isso o cliente da equipe
+   * relê a tabela protegida por RLS e exige as chaves esperadas, PDF e SHA-256.
    */
-  private async congelarOrigemNoServidor(requestId: string): Promise<void> {
-    try {
-      const { data, error } = await supabase.functions.invoke('congelar-docx-no-servidor', {
-        body: { request_id: requestId },
-      });
-      if (error || !data?.success) {
-        console.warn('[congelamento] não concluiu:', error?.message ?? data?.error ?? '(sem detalhe)');
-        return;
-      }
-      console.log('[congelamento] origem congelada no servidor:',
-        JSON.stringify(data.resultados), 'âncoras:', data.ancoras_localizadas ?? 0);
-    } catch (e) {
-      console.warn('[congelamento] falhou:', e);
+  private async exigirOrigemCongeladaNoServidor(
+    requestId: string,
+    expectedDocumentCount: number,
+    provenance?: Record<string, unknown>,
+  ): Promise<void> {
+    const resultado = await this.congelarOriginalNoServidor(requestId, provenance);
+    const congelados = await this.listarOriginaisCongelados(requestId);
+    const porChave = new Map(congelados.map((item) => [item.document_key, item]));
+    const chavesEsperadas = Array.from({ length: expectedDocumentCount }, (_, index) =>
+      index === 0 ? 'main' : `attachment-${index - 1}`,
+    );
+    const completos = chavesEsperadas.every((chave) => {
+      const item = porChave.get(chave);
+      return item?.is_pdf === true && /^[a-f0-9]{64}$/i.test(String(item.sha256 ?? ''));
+    });
+
+    if (resultado.parecer !== 'INTEGRO' || !completos) {
+      const detalhe = resultado.erro
+        || `${congelados.length}/${expectedDocumentCount} documento(s) confirmado(s)`;
+      throw new Error(
+        'Não foi possível preparar todos os documentos no servidor. '
+        + `O envelope não foi criado (${detalhe}). Tente novamente.`,
+      );
     }
   }
 
@@ -1168,14 +1224,55 @@ class SignatureService {
    * Anexa o PDF assinado/sha256 ao signatário pelo PÚBLICO via RPC restrita por
    * public_token (substitui o update anon direto). Só grava após assinado.
    */
-  async attachSignedPdfPublic(token: string, signedDocumentPath: string, sha256?: string | null, integritySha256?: string | null): Promise<void> {
+  /**
+   * Pendura o PDF assinado no SIGNATÁRIO (modelo consolidado) e DIZ O QUE
+   * FICOU VALENDO.
+   *
+   * Ela não devolvia nada e engolia o erro num `console.warn`. Duas coisas
+   * passavam despercebidas por causa disso, e as duas terminavam na mesma tela
+   * de sucesso:
+   *
+   *   · a RPC falhar de verdade (erro de banco) — nenhuma linha gravada;
+   *   · a RPC voltar limpa e não gravar NADA, porque `public_attach_signed_pdf`
+   *     é one-shot: `signed_document_path` só é escrito enquanto estiver nulo.
+   *     Quando o servidor chegou primeiro, é o artefato DELE que vale, e o
+   *     navegador seguia mostrando o seu.
+   *
+   * Por isso ela agora relê o ponteiro e devolve o caminho VIGENTE. Quem chama
+   * usa esse caminho — não o que acabou de escrever. Erro de banco vira
+   * exceção, como no `attachSignedDocumentPublic`: persistir o artefato é
+   * requisito jurídico e não pode falhar em silêncio.
+   */
+  async attachSignedPdfPublic(
+    token: string,
+    signedDocumentPath: string,
+    sha256?: string | null,
+    integritySha256?: string | null,
+  ): Promise<{ vigente: string; foiOMeu: boolean }> {
     const { error } = await supabase.rpc('public_attach_signed_pdf', {
       p_token: token,
       p_path: signedDocumentPath,
       p_sha256: sha256 ?? null,
       p_integrity_sha256: integritySha256 ?? null,
     });
-    if (error) console.warn('Não foi possível anexar PDF assinado (acesso público):', error);
+    if (error) {
+      console.error('[ASSINATURA] Falha ao anexar PDF assinado (acesso público):', error);
+      throw new Error(error.message || 'Falha ao persistir o documento assinado.');
+    }
+
+    const bundle = await this.getPublicSigningBundle(token).catch(() => null);
+    const vigente = bundle?.signer?.signed_document_path ?? null;
+    if (!vigente) {
+      // A RPC não devolve erro quando a trava one-shot recusa, e também não
+      // devolve quando o envelope não está em estado de receber. Ponteiro nulo
+      // depois da chamada significa que NADA foi registrado.
+      throw new Error('O documento assinado não foi registrado no envelope.');
+    }
+    if (vigente !== signedDocumentPath) {
+      console.warn('[ASSINATURA] o ponteiro do envelope aponta para outro artefato —',
+        'gravado antes por outro caminho (servidor). Vale:', vigente);
+    }
+    return { vigente, foiOMeu: vigente === signedDocumentPath };
   }
 
   // ==================== DOCUMENTOS DO ENVELOPE (modelo per_document) ====================
@@ -1350,6 +1447,32 @@ class SignatureService {
    * já ficou pronto. Timeout não é falha: o job permanece no servidor e pode
    * ser retomado pelo cron depois que a janela for fechada.
    */
+  /**
+   * ACORDA O WORKER da fila de montagem, sem lhe dizer o que fazer.
+   *
+   * O corpo é `{process_due:true}` e nada mais: a função só processa jobs que o
+   * GATILHO do banco criou. Quem assina não escolhe envelope, não passa
+   * caminho, não passa hash — no máximo apressa um trabalho que já estava
+   * enfileirado para ele mesmo.
+   *
+   * Existe porque a fila tem duas velocidades. O `per_document` é acordado pelo
+   * próprio banco (`pg_net`, dentro do gatilho); o consolidado de um documento
+   * não é — o gatilho dele apenas enfileira, para não reemitir a chave anônima
+   * dentro de um corpo de função. Sem esta chamada, quem assina esperaria o
+   * cron do minuto seguinte olhando uma tela de "finalizando".
+   *
+   * FALHA MACIA de propósito: o cron de um minuto é a garantia. Isto é pressa.
+   */
+  async acordarMontagemNoServidor(): Promise<void> {
+    try {
+      await supabase.functions.invoke('montar-envelope-assinado', {
+        body: { process_due: true },
+      });
+    } catch (e) {
+      console.warn('[montagem] não foi possível acordar o worker (o cron cobre):', e);
+    }
+  }
+
   async waitForAssemblyPublic(
     publicToken: string,
     opts?: { timeoutMs?: number; intervalMs?: number },

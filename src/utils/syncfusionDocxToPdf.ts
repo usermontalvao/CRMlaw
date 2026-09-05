@@ -32,6 +32,7 @@ import {
 import {
   buildSyncfusionServiceHeaders,
   hasSyncfusionLicense,
+  motivoDaLicencaAusente,
   registerSyncfusionLicenseOnce,
   resolveSyncfusionServiceUrl,
 } from './syncfusionRuntime';
@@ -75,8 +76,10 @@ export function syncfusionEngineUnavailableReason(): string | null {
     return 'Conversão pelo Syncfusion exige navegador.';
   }
   if (!hasSyncfusionLicense()) {
-    // Sem licença o EJ2 desenha o aviso de avaliação sobre a página.
-    return 'Licença do Syncfusion não configurada (VITE_SYNCFUSION_LICENSE_KEY).';
+    // Sem licença o EJ2 desenha o aviso de avaliação sobre a página. O motivo
+    // vem pronto porque "não configurada" e "configurada torta" pedem conserto
+    // em lugares diferentes — e a segunda foi a que aconteceu de verdade.
+    return motivoDaLicencaAusente();
   }
   if (!resolveSyncfusionServiceUrl()) {
     return 'Servidor de documentos do Syncfusion não configurado.';

@@ -1,0 +1,40 @@
+<!doctype html>
+<html lang="pt-BR">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Bancada — montagem do PDF assinado</title>
+    <style>
+      body { font: 14px/1.5 system-ui, sans-serif; margin: 0; padding: 16px; background: #f5f5f3; color: #18181b; }
+      h1 { font-size: 16px; margin: 0 0 4px; }
+      p.sub { margin: 0 0 12px; color: #52525b; font-size: 13px; max-width: 70ch; }
+      .row { display: flex; gap: 10px; flex-wrap: wrap; align-items: center; margin-bottom: 12px; }
+      label { font-size: 12px; color: #52525b; display: flex; gap: 6px; align-items: center; }
+      button { font: inherit; padding: 6px 12px; border-radius: 8px; border: 1px solid #d4d4d8; background: #fff; cursor: pointer; }
+      button:disabled { opacity: .5; cursor: default; }
+      input[type=number] { width: 62px; font: inherit; padding: 4px 6px; border: 1px solid #d4d4d8; border-radius: 6px; }
+      #log { white-space: pre-wrap; font-family: ui-monospace, monospace; font-size: 12px; background: #fff; border: 1px solid #e4e4e7; border-radius: 8px; padding: 10px; max-height: 320px; overflow: auto; }
+      #out { display: flex; flex-wrap: wrap; gap: 12px; margin-top: 12px; }
+      .pagina { background: #fff; border: 1px solid #e4e4e7; border-radius: 8px; padding: 8px; }
+      .pagina .titulo { font-size: 12px; font-weight: 600; margin-bottom: 6px; }
+      .pagina canvas { max-width: 320px; height: auto; display: block; border: 1px solid #f4f4f5; }
+    </style>
+  </head>
+  <body>
+    <h1>Bancada — montagem do PDF assinado</h1>
+    <p class="sub">
+      A é a referência (o que o navegador monta hoje); B é o novo (o que o servidor montou).
+      <strong>Primeiro teste, sempre: o mesmo arquivo nos dois lados</strong> — tem de dar
+      "idêntica" em todas as páginas. Se não der, o defeito está na bancada.
+    </p>
+    <div class="row">
+      <label>A (referência) <input id="file-a" type="file" accept="application/pdf" /></label>
+      <label>B (novo) <input id="file-b" type="file" accept="application/pdf" /></label>
+      <label>escala <input id="escala" type="number" min="0.5" max="3" step="0.5" value="1.5" /></label>
+      <button id="comparar">Comparar</button>
+    </div>
+    <div id="log">pronto.</div>
+    <div id="out"></div>
+    <script type="module" src="/src/dev/montagemLab.ts"></script>
+  </body>
+</html>

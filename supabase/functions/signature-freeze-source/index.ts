@@ -190,20 +190,35 @@ Deno.serve(async (req: Request) => {
       const ehPdf = pareceUmPdf(baixado.bytes);
 
       // ── A CONFERÊNCIA ──
-      // Mesmo caminho, hash diferente do que já estava congelado: os bytes no
-      // Storage mudaram depois. O valor registrado é PRESERVADO — sobrescrever
-      // apagaria justamente a prova de que houve troca.
-      if (anterior?.sha256 && anterior.file_path === alvo.path
-          && normalizarSha256(anterior.sha256) !== normalizarSha256(sha)) {
-        violacoes += 1;
-        await audit(supabase, requestId, 'integrity_violation',
-          `INTEGRIDADE: o arquivo de origem ${alvo.chave} (${alvo.path}) DIVERGE do congelado. `
-          + `Registrado ${anterior.sha256}; recalculado ${sha}. O valor registrado foi preservado.`);
-        resultados.push({
-          document_key: alvo.chave, path: alvo.path, resultado: 'divergente',
-          sha256_registrado: anterior.sha256, sha256_recalculado: sha,
-        });
-        continue;
+      // Uma vez congelado, NADA reescreve a linha: nem hash diferente, nem
+      // caminho diferente. Sobrescrever apagaria justamente a prova de que
+      // houve troca.
+      //
+      // O CAMINHO ENTRA NA TRAVA, e essa é a diferença para a primeira versão
+      // desta função. Antes, a divergência só era acusada quando
+      // `anterior.file_path === alvo.path`; bastava alterar o `document_path`
+      // do envelope para outro arquivo — de outros bytes — para o código cair
+      // no `upsert` lá embaixo e substituir o hash congelado por um novo. O
+      // "original congelado" ficava, na prática, editável por quem pudesse
+      // mexer no ponteiro do envelope. Imutável é imutável: só a AUSÊNCIA de
+      // linha anterior autoriza gravar.
+      if (anterior?.sha256) {
+        const trocouOsBytes = normalizarSha256(anterior.sha256) !== normalizarSha256(sha);
+        const trocouOCaminho = String(anterior.file_path ?? '') !== alvo.path;
+        if (trocouOsBytes || trocouOCaminho) {
+          violacoes += 1;
+          await audit(supabase, requestId, 'integrity_violation',
+            `INTEGRIDADE: o arquivo de origem ${alvo.chave} DIVERGE do congelado. `
+            + `Registrado ${anterior.sha256} em ${anterior.file_path ?? '(sem caminho)'}; `
+            + `recalculado ${sha} em ${alvo.path}. O valor registrado foi preservado.`);
+          resultados.push({
+            document_key: alvo.chave, path: alvo.path, resultado: 'divergente',
+            sha256_registrado: anterior.sha256, sha256_recalculado: sha,
+            path_registrado: anterior.file_path ?? null,
+            motivo: trocouOCaminho ? (trocouOsBytes ? 'caminho_e_bytes' : 'caminho') : 'bytes',
+          });
+          continue;
+        }
       }
 
       if (anterior?.sha256 && normalizarSha256(anterior.sha256) === normalizarSha256(sha)) {
@@ -250,6 +265,10 @@ Deno.serve(async (req: Request) => {
     }
 
     const congelados = resultados.filter((r) => r.resultado === 'congelado').length;
+    const confirmados = resultados.filter((r) =>
+      (r.resultado === 'congelado' || r.resultado === 'ja_congelado') && r.is_pdf === true
+    ).length;
+    const esperados = alvos.length;
     const naoPdf = resultados.filter((r) => r.is_pdf === false).length;
     const ausentes = resultados.filter((r) => r.resultado === 'nao_encontrado').length;
 
@@ -265,12 +284,12 @@ Deno.serve(async (req: Request) => {
     }
 
     const parecer = violacoes > 0 ? 'NAO_INTEGRO'
-      : (ausentes > 0 || naoPdf > 0) ? 'INCONCLUSIVO'
+      : (confirmados !== esperados || ausentes > 0 || naoPdf > 0) ? 'INCONCLUSIVO'
       : 'INTEGRO';
 
     return jsonResponse({
-      success: violacoes === 0 && ausentes === 0,
-      parecer, congelados, ausentes, nao_pdf: naoPdf, documentos: resultados,
+      success: parecer === 'INTEGRO',
+      parecer, congelados, confirmados, esperados, ausentes, nao_pdf: naoPdf, documentos: resultados,
     }, violacoes > 0 ? 409 : 200);
   } catch (err) {
     console.error('[signature-freeze-source] erro:', err);

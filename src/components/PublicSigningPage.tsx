@@ -2101,6 +2101,130 @@ const PublicSigningPage: React.FC<PublicSigningPageProps> = ({ token }) => {
     return null;
   };
 
+  /**
+   * A MONTAGEM NO SERVIDOR DO ENVELOPE DE UM DOCUMENTO SÓ (`consolidated`).
+   *
+   * O `per_document` já entregava a montagem ao servidor. Este caminho — o do
+   * envelope sem anexo, que é o que o assistente do módulo de Assinaturas cria
+   * — não: ele ia direto para o `pdfSignature.service.ts`, no aparelho de quem
+   * assina. Não era falha do servidor; o servidor nunca era chamado. Foi assim
+   * que o envelope 750a3bce-58b1-4d8c-b159-c6f943d62e87 nasceu montado no
+   * navegador em 04/09/2026, sem uma linha de erro em lugar nenhum.
+   *
+   * COMO FUNCIONA: a assinatura já deixou um job DURÁVEL na fila
+   * (`signature_assembly_jobs`, gravado pelo gatilho do banco). Aqui só
+   * acordamos o worker e esperamos uma janela curta para conseguir MOSTRAR o
+   * PDF pronto. Fechar a aba não interrompe nem perde o trabalho — o cron de um
+   * minuto termina.
+   *
+   * O QUE ELA DEVOLVE, E POR QUÊ SÃO TRÊS RESPOSTAS E NÃO DUAS:
+   *
+   *   · `pronto`   → o artefato do servidor existe e está apontado;
+   *   · `pendente` → o job AINDA VIVE (queued/running/retry_wait) e só não
+   *                  coube na janela de espera;
+   *   · `null`     → não há nada no servidor para esperar (montagem desligada,
+   *                  envelope com anexo, sem job na fila, ou job `failed` —
+   *                  que é terminal).
+   *
+   * `pendente` existe por causa de uma CORRIDA REAL. O worker confere o
+   * `signed_document_path` uma vez, ANTES do trabalho demorado; passados os 25
+   * segundos, ele pode estar no meio da montagem. Se o navegador começasse a
+   * montar aí, os dois terminariam: o navegador gravaria em
+   * `signature_signers` e o servidor em `signature_request_documents`. A trava
+   * one-shot impede a segunda ESCRITA do ponteiro, mas não desfaz o registro
+   * do outro lado nem apaga o PDF já produzido — sobrariam dois artefatos num
+   * acervo probatório, com hashes diferentes, e ninguém saberia qual foi o
+   * entregue. Enquanto houver job vivo, esperar é a resposta certa: a tela diz
+   * "ainda sendo finalizado" e o cron do minuto seguinte termina o trabalho.
+   *
+   * O plano B do navegador continua inteiro (diferente do `per_document`, que
+   * é falha fechada) — mas só quando não há servidor nenhum montando.
+   */
+  const montarConsolidadoNoServidor = async (
+    currentRequest: SignatureRequest,
+  ): Promise<
+    | { tipo: 'pronto'; url: string; path: string; signer: Signer | null }
+    | { tipo: 'pendente'; motivo: string }
+    | null
+  > => {
+    const interruptor = montarNoServidor();
+    console.log('[ASSINATURA] montagem no servidor:',
+      interruptor.noServidor ? 'LIGADA' : 'desligada',
+      '— decidido por:', interruptor.origem, '|', retratoDoInterruptor());
+    if (!interruptor.noServidor) return null;
+
+    // Consolidado COM ANEXO fica de fora, e é decisão, não esquecimento: o
+    // artefato dele é um PDF único que concatena principal + anexos + laudo, e
+    // a montagem do servidor é POR DOCUMENTO. Trocar um pelo outro mudaria a
+    // forma do arquivo entregue ao cliente. São envelopes legados; nenhum foi
+    // criado nos últimos 30 dias.
+    const anexos = (currentRequest.attachment_paths?.length ?? 0);
+    if (anexos > 0) {
+      console.log('[ASSINATURA] consolidado com', anexos,
+        'anexo(s) — artefato concatenado, montagem segue no navegador');
+      return null;
+    }
+
+    const inicial = await signatureService.getAssemblyStatusPublic(token);
+    if (!inicial || inicial.status === 'none') {
+      // Sem job na fila o gatilho não rodou (envelope anterior à migração, ou
+      // migração ainda não aplicada). Esperar aqui seria esperar por nada.
+      console.warn('[ASSINATURA] sem job de montagem na fila — seguindo no navegador');
+      return null;
+    }
+
+    await signatureService.acordarMontagemNoServidor();
+    const assembly = await signatureService.waitForAssemblyPublic(token, { timeoutMs: 25_000 });
+    if (!assembly.finished) {
+      // `failed` é TERMINAL: `reagendar` só o grava quando a falha é permanente
+      // ou as tentativas acabaram. Aí não há mais servidor para esperar e o
+      // navegador assume. Qualquer outro estado (`queued`, `running`,
+      // `retry_wait`) é job VIVO — montar aqui produziria o segundo artefato.
+      if (!assembly.failed) {
+        console.warn('[ASSINATURA] servidor ainda montando (', assembly.status,
+          ') — a tela espera; o cron termina. NÃO monta no navegador.');
+        return { tipo: 'pendente', motivo: assembly.status };
+      }
+      console.warn('[ASSINATURA] montagem no servidor falhou em definitivo —',
+        assembly.error ?? assembly.status, '— seguindo no navegador');
+      return null;
+    }
+
+    // O ponteiro é a prova. O job pode terminar dizendo "completed" tendo
+    // apenas constatado que o navegador chegou primeiro; quem responde de onde
+    // veio o arquivo é a linha do signatário.
+    const latest = await signatureService.getPublicSigningBundle(token).catch(() => null);
+    const path = latest?.signer?.signed_document_path ?? null;
+    if (!path) {
+      // Job `completed` quer dizer que o servidor PRODUZIU e REGISTROU um
+      // artefato (a linha em `signature_request_documents`) — ou constatou que
+      // o navegador chegou antes, e aí o ponteiro existiria. Sem ponteiro
+      // sobrando, o que falta é só a ponte da RPC; montar no navegador agora
+      // criaria um SEGUNDO PDF ao lado de um que já está registrado. A tela
+      // espera, e o módulo entrega o arquivo do servidor.
+      console.warn('[ASSINATURA] montagem concluída sem ponteiro do artefato —',
+        'artefato do servidor já registrado; a tela espera em vez de montar de novo');
+      return { tipo: 'pendente', motivo: 'sem ponteiro' };
+    }
+    const url = await signatureService.getPublicFileUrl(token, path);
+    if (!url) {
+      // O artefato existe e está apontado; falta só a URL de leitura. Montar
+      // outro por causa disso trocaria um problema de link por um documento
+      // duplicado.
+      console.warn('[ASSINATURA] artefato do servidor sem URL de leitura — a tela tenta de novo');
+      return { tipo: 'pendente', motivo: 'sem url' };
+    }
+
+    console.log('[ASSINATURA] montado NO SERVIDOR —',
+      'origem do interruptor:', interruptor.origem,
+      '| arquivo:', path,
+      '| sha256:', (latest?.signer as any)?.signed_pdf_sha256 ?? '(pendente)');
+    if (latest?.request) setRequest(latest.request);
+    if (latest?.signer) setSigner(latest.signer);
+    setSignedDocumentUrl(url);
+    return { tipo: 'pronto', url, path, signer: latest?.signer ?? null };
+  };
+
   const generateSignedDocumentForSigner = async (
     currentRequest: SignatureRequest,
     currentSigner: Signer,
@@ -2112,6 +2236,21 @@ const PublicSigningPage: React.FC<PublicSigningPageProps> = ({ token }) => {
       return await generatePerDocumentSignedForSigner(currentRequest, currentSigner);
     }
     console.log('[ASSINATURA] signature_model=consolidated (legado) → PDF único consolidado');
+
+    // O servidor primeiro, sempre. Só depois o desenho no aparelho.
+    const doServidor = await montarConsolidadoNoServidor(currentRequest);
+    if (doServidor?.tipo === 'pronto') return doServidor.url;
+
+    // `pendente` NÃO cai para o navegador. Há um artefato do servidor a
+    // caminho (ou já registrado), e montar outro aqui deixaria dois PDFs
+    // diferentes para o mesmo ato. Devolver `null` é o que a tela já sabe
+    // tratar: ela diz que o documento ainda está sendo finalizado, e o cron
+    // termina em até um minuto.
+    if (doServidor?.tipo === 'pendente') {
+      console.warn('[ASSINATURA] finalização pendente no servidor (', doServidor.motivo,
+        ') — a montagem no navegador NÃO é acionada');
+      return null;
+    }
 
     let signedPdfPath: string;
     let signedPdfSha256: string | null = null;
@@ -2199,13 +2338,31 @@ const PublicSigningPage: React.FC<PublicSigningPageProps> = ({ token }) => {
       signedIntegritySha256 = integritySha256;
     }
 
-    await signatureService.attachSignedPdfPublic(token, signedPdfPath, signedPdfSha256, signedIntegritySha256);
+    // ── O QUE FICOU REGISTRADO É O QUE VALE ─────────────────────────────────
+    //
+    // Antes, o caminho local ia direto para o estado e a tela dizia "assinado"
+    // sem que ninguém tivesse confirmado a gravação. A trava one-shot pode ter
+    // recusado — porque o servidor chegou primeiro — e o signatário ficaria
+    // vendo um PDF que o envelope não reconhece. `attachSignedPdfPublic` agora
+    // devolve o ponteiro VIGENTE; é ele que a tela mostra.
+    const { vigente, foiOMeu } = await signatureService.attachSignedPdfPublic(
+      token, signedPdfPath, signedPdfSha256, signedIntegritySha256,
+    );
 
-    const signedUrl = await signatureService.getPublicFileUrl(token,signedPdfPath);
+    const signedUrl = await signatureService.getPublicFileUrl(token, vigente);
     if (signedUrl) {
       setSignedDocumentUrl(signedUrl);
       setSigner((prev) => (prev && prev.id === currentSigner.id
-        ? { ...prev, signed_document_path: signedPdfPath, signed_pdf_sha256: signedPdfSha256 ?? null, integrity_sha256: signedIntegritySha256 ?? null }
+        ? {
+            ...prev,
+            signed_document_path: vigente,
+            // Hash só acompanha o arquivo que é REALMENTE o meu. Se o ponteiro
+            // ficou com o artefato do servidor, os hashes dele são os que o
+            // banco já guarda — anotar os meus aqui seria descrever um arquivo
+            // pelo resumo de outro.
+            signed_pdf_sha256: foiOMeu ? (signedPdfSha256 ?? null) : (prev.signed_pdf_sha256 ?? null),
+            integrity_sha256: foiOMeu ? (signedIntegritySha256 ?? null) : (prev.integrity_sha256 ?? null),
+          }
         : prev));
     }
     return signedUrl;
@@ -3197,19 +3354,16 @@ const PublicSigningPage: React.FC<PublicSigningPageProps> = ({ token }) => {
                   if (main?.url) setSignedDocumentUrl(main.url);
                 }
               } else if (assembly.failed || assembly.status === 'none') {
-                // Compatibilidade com envelope antigo que ainda contém DOCX com
-                // coordenada manual da paginação do navegador. É o único caso em
-                // que o servidor recusa de forma permanente; o fluxo anterior
-                // continua como salvaguarda enquanto esses envelopes existirem.
-                console.warn('[PER-DOC] servidor não pode concluir este envelope; usando compatibilidade local:',
+                // Falha fechada: nunca devolver ao aparelho do signatário o
+                // poder de produzir o artefato final. Envelopes novos não chegam
+                // aqui porque a criação exige o congelamento integral; um legado
+                // incompatível precisa ser recriado pela equipe.
+                console.error('[PER-DOC] servidor não concluiu o envelope:',
                   assembly.error ?? assembly.status);
-                await generatePerDocumentSignedForSigner(request, result);
-                await signatureService.finalizePerDocumentSigningPublic(token, {
-                  expectedDocumentCount: expectedPerDocumentCount,
-                  origin: window.location.origin,
-                  ipAddress,
-                  userAgent,
-                });
+                throw new Error(
+                  'Sua assinatura foi registrada, mas o servidor não conseguiu finalizar os PDFs. '
+                  + 'A equipe responsável foi informada; você pode fechar esta página.',
+                );
               } else {
                 toast.success('Assinatura registrada. Os documentos continuarão sendo finalizados no servidor; você já pode fechar esta página.');
               }
@@ -3230,6 +3384,47 @@ const PublicSigningPage: React.FC<PublicSigningPageProps> = ({ token }) => {
                 }
               }
             }
+          } else if (await (async () => {
+            // ── O SERVIDOR PRIMEIRO, TAMBÉM NO CONSOLIDADO ──────────────────
+            //
+            // Este `else if` é o conserto de 04/09/2026. Até aqui o envelope de
+            // UM documento — o que o assistente do módulo cria sem anexo — caía
+            // direto no bloco de baixo, isto é, no `pdfSignature.service.ts`,
+            // no aparelho de quem assina. O interruptor da montagem no servidor
+            // existia, estava LIGADO, e nunca era consultado neste caminho.
+            //
+            // A forma (um `else if` com a tentativa dentro) é escolhida para não
+            // reindentar uma linha sequer do fluxo antigo: ele continua exatamente
+            // como estava, e é para ele que se cai quando o servidor não entrega.
+            const doServidor = await montarConsolidadoNoServidor(request);
+            if (!doServidor) return false;
+
+            // PENDENTE também entra aqui, e é o ponto todo da correção: o job
+            // do servidor continua vivo (ou já registrou o artefato), então
+            // este bloco assume SEM desenhar nada. Cair no `else` produziria um
+            // segundo PDF para o mesmo ato. O ponteiro fica como está; a tela
+            // de sucesso diz "ainda sendo finalizado" e o
+            // `waitForSignedDocumentUrl` busca o arquivo assim que o cron
+            // terminar — no máximo um minuto depois.
+            if (doServidor.tipo === 'pendente') {
+              console.warn('[ASSINATURA] finalização pendente no servidor (', doServidor.motivo,
+                ') — a tela espera o artefato do servidor');
+              return true;
+            }
+
+            // `result` é o objeto que vira o estado do signatário no fim de
+            // `handleSign`. Sem repontar aqui, o `setSigner(result)` lá embaixo
+            // apagaria o ponteiro que o servidor acabou de gravar e a tela de
+            // sucesso diria que o documento ainda está sendo finalizado.
+            result.signed_document_path = doServidor.path;
+            if (doServidor.signer) {
+              (result as any).signed_pdf_sha256 = (doServidor.signer as any).signed_pdf_sha256 ?? null;
+              (result as any).integrity_sha256 = (doServidor.signer as any).integrity_sha256 ?? null;
+            }
+            return true;
+          })()) {
+            // Nada a desenhar: o artefato nasceu no servidor, com o hash apurado
+            // sobre os bytes que ele mesmo produziu.
           } else {
           let signedPdfPath: string;
           let signedPdfSha256: string | null = null;
@@ -3410,15 +3605,23 @@ const PublicSigningPage: React.FC<PublicSigningPageProps> = ({ token }) => {
             signedIntegritySha256 = integritySha256;
           }
 
-          // Atualizar o signer com o path do PDF assinado
-          await signatureService.attachSignedPdfPublic(token, signedPdfPath, signedPdfSha256, signedIntegritySha256);
-          result.signed_document_path = signedPdfPath;
-          (result as any).signed_pdf_sha256 = signedPdfSha256;
-          (result as any).integrity_sha256 = signedIntegritySha256;
-          console.log('[ASSINATURA] PDF compilado salvo com sucesso:', signedPdfPath);
+          // Atualizar o signer com o path do PDF assinado. O que vale é o
+          // ponteiro VIGENTE devolvido pela RPC, não o caminho que acabamos de
+          // escrever: a trava one-shot pode ter recusado porque o servidor
+          // chegou primeiro, e nesse caso o artefato do envelope é o dele.
+          const { vigente, foiOMeu } = await signatureService.attachSignedPdfPublic(
+            token, signedPdfPath, signedPdfSha256, signedIntegritySha256,
+          );
+          result.signed_document_path = vigente;
+          if (foiOMeu) {
+            (result as any).signed_pdf_sha256 = signedPdfSha256;
+            (result as any).integrity_sha256 = signedIntegritySha256;
+          }
+          console.log('[ASSINATURA] PDF compilado salvo com sucesso:', vigente,
+            foiOMeu ? '' : '(o ponteiro ficou com o artefato do servidor)');
 
           try {
-            const signedUrl = await signatureService.getPublicFileUrl(token,signedPdfPath);
+            const signedUrl = await signatureService.getPublicFileUrl(token, vigente);
             if (signedUrl) {
               setSignedDocumentUrl(signedUrl);
             }
@@ -3438,13 +3641,14 @@ const PublicSigningPage: React.FC<PublicSigningPageProps> = ({ token }) => {
               userAgent,
             });
           }
-          // Modelo per_document: falha REAL de persistência do documento individual
-          // é requisito jurídico — NÃO pode virar sucesso visual. Propaga para o
-          // catch externo (step='error') com mensagem explícita.
-          if (pdfErr?.__perDocPersistFailure) {
+          // No modelo per_document, QUALQUER falha desta etapa é do servidor e
+          // não pode virar sucesso visual nem acionar montagem local. Propaga
+          // para o catch externo; o job durável continua recuperável sem a aba.
+          if (request?.signature_model === 'per_document') {
             throw new Error(
               (pdfErr?.message ? `${pdfErr.message} ` : '') +
-                'Sua assinatura foi registrada, mas o documento assinado não pôde ser salvo. Recarregue a página e tente novamente; se persistir, contate o suporte.',
+                'Sua assinatura foi registrada, mas os documentos ainda não foram finalizados. '
+                + 'Você pode fechar a página; se persistir, contate o suporte.',
             );
           }
           // Fluxo consolidado (legado): PDF compilado pode ser regenerado depois

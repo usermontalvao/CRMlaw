@@ -251,3 +251,63 @@ export function planPagePlacement(input: {
 export function pdfPageFormat(geometry: PageGeometry): [number, number] {
   return [geometry.widthMm, geometry.heightMm];
 }
+
+/** Um campo medido sobre a FOLHA renderizada, em porcentagem dela. */
+export type CampoNaFolha = {
+  x_percent: number;
+  y_percent: number;
+  w_percent: number;
+  h_percent: number;
+};
+
+/** O mesmo campo, já dito em porcentagem de UMA página do PDF. */
+export type CampoNaFatia = CampoNaFolha & {
+  /** Índice da fatia (página) desta folha em que o campo caiu, contando de 0. */
+  sliceIndex: number;
+};
+
+/**
+ * Converte um campo medido na FOLHA para a PÁGINA do PDF em que ele caiu.
+ *
+ * ESTE É O DEFEITO QUE A FUNÇÃO EXISTE PARA FECHAR. Uma folha do `docx-preview`
+ * nem sempre vira uma página: quando o Word não traz quebra explícita, o
+ * documento inteiro sai numa `<section>` só, e `planPagePlacement` a fatia em N
+ * páginas. O `[[ASSINATURA]]` era gravado com a página da FOLHA (sempre 1) e
+ * com a altura da folha inteira como referência — então uma assinatura no fim
+ * de um contrato de quatro páginas era carimbada no pé da PÁGINA 1, sobre o
+ * texto, e a linha "CONTRATANTE ______" saía em branco.
+ *
+ * A conta é a inversa do desenho: a imagem é colocada com altura
+ * `plan.imageHeightMm` e deslocamento `-k · alturaDaPagina` na fatia `k`; logo
+ * o ponto que está a `y%` da imagem cai na fatia `⌊y·altura/página⌋`, na
+ * posição que sobra da divisão.
+ *
+ * Vale também quando há uma fatia só: aí a imagem pode ser mais BAIXA que a
+ * página (uma folha de 295 mm numa página de 297), e a porcentagem da folha
+ * não é a mesma da página.
+ */
+export function campoDaFolhaNaFatia(
+  campo: CampoNaFolha,
+  plan: PagePlan,
+  pageHeightMm: number,
+): CampoNaFatia {
+  const alturaDaPagina = pageHeightMm > 0 ? pageHeightMm : DEFAULT_PAGE_MM.height;
+  const alturaDaImagem = plan.imageHeightMm > 0 ? plan.imageHeightMm : alturaDaPagina;
+  const ultimaFatia = Math.max(1, plan.slices.length) - 1;
+
+  const topoMm = (campo.y_percent / 100) * alturaDaImagem;
+  const alturaMm = (campo.h_percent / 100) * alturaDaImagem;
+
+  // Fora da imagem (medida estranha, marcador em elemento com altura zero) o
+  // campo fica na última fatia em vez de virar uma página que não existe.
+  const sliceIndex = Math.min(ultimaFatia, Math.max(0, Math.floor(topoMm / alturaDaPagina)));
+  const topoNaPagina = topoMm - sliceIndex * alturaDaPagina;
+
+  return {
+    sliceIndex,
+    x_percent: campo.x_percent,
+    w_percent: campo.w_percent,
+    y_percent: Math.max(0, Math.min(100, (topoNaPagina / alturaDaPagina) * 100)),
+    h_percent: Math.max(0, Math.min(100, (alturaMm / alturaDaPagina) * 100)),
+  };
+}

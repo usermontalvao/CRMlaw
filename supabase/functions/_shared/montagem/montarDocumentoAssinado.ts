@@ -22,6 +22,7 @@
  * pdf-lib de `node_modules` — a MESMA versão, sem duas cópias divergindo.
  */
 import {
+  ALTURA_DA_FAIXA_DO_RODAPE,
   caixaComFaixaDoRodape,
   encaixarNaPagina,
   paginaDoCampo,
@@ -210,6 +211,34 @@ export function abrirFaixaDoRodape(documento: DocumentoPdf, quantasPaginas: numb
 }
 
 /**
+ * Tapa, de branco, a faixa que acabou de ser aberta embaixo da página.
+ *
+ * O DEFEITO QUE ISTO FECHA: crescer o MediaBox não cria papel em branco — ele
+ * DESCOBRE o que o recorte da página escondia. Um PDF cuja última linha
+ * transborda o pé da folha (o que a conversão por fatias produz o tempo todo:
+ * a imagem do documento é cortada no meio da linha) some com o excedente
+ * porque o visualizador recorta na caixa. Aberta a faixa, esse excedente
+ * reaparece — e o rodapé fica por cima de um texto que ninguém deveria ver,
+ * que foi exatamente a queixa de "o rodapé está sobrepondo o documento".
+ *
+ * Tapar restaura o que o original mostrava: nada se perde, porque nada disso
+ * era visível antes.
+ *
+ * Vem ANTES da marca d'água e do rodapé no mesmo laço — o PDF pinta na ordem
+ * do stream, e uma máscara desenhada depois apagaria os dois.
+ */
+export function taparFaixaRevelada(
+  pagina: any,
+  branco: unknown,
+  altura: number = ALTURA_DA_FAIXA_DO_RODAPE,
+): void {
+  const mb = pagina.getMediaBox();
+  pagina.drawRectangle({
+    x: mb.x, y: mb.y, width: mb.width, height: altura, color: branco,
+  });
+}
+
+/**
  * Monta o documento assinado inteiro.
  *
  * A ORDEM das etapas é regra, não estilo:
@@ -219,8 +248,10 @@ export function abrirFaixaDoRodape(documento: DocumentoPdf, quantasPaginas: numb
  *      desenhado se move;
  *   3. **então o laudo**, cujas páginas já nascem com layout próprio e por isso
  *      NÃO passam pela reserva de faixa;
- *   4. **por fim o rodapé e a marca d'água**, em cima de tudo, com a marca só
- *      nas folhas de conteúdo.
+ *   4. **por fim a máscara, a marca d'água e o rodapé**, em cima de tudo, com
+ *      a máscara e a marca só nas folhas de conteúdo — a máscara antes das
+ *      outras duas, porque ela existe para tapar o que a faixa descobriu (ver
+ *      `taparFaixaRevelada`), não para apagá-las.
  *
  * Inverter 1 e 2 desenharia as rubricas já contando com a folha crescida —
  * deslocadas 84 pt para cima. Inverter 2 e 3 abriria faixa nas páginas do laudo.
@@ -258,6 +289,8 @@ export async function montarDocumentoAssinado(
     const ehConteudo = i < entrada.paginasDeConteudo;
 
     if (ehConteudo) {
+      taparFaixaRevelada(pagina, ferramentas.rgb(1, 1, 1));
+
       desenharMarcaDagua({
         pagina,
         larguraDaPagina: width,

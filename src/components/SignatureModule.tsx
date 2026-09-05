@@ -28,6 +28,7 @@ import { events, SYSTEM_EVENTS } from '../utils/events';
 import { documentTemplateService } from '../services/documentTemplate.service';
 import { signatureFieldsService } from '../services/signatureFields.service';
 import { congelarOriginais } from '../services/congelamentoDeOriginal.service';
+import { fimDoDiaNoEscritorio } from '../utils/prazoDoEnvelope';
 import { settingsService } from '../services/settings.service';
 import { useDeleteConfirm } from '../contexts/DeleteConfirmContext';
 import { userNotificationService } from '../services/userNotification.service';
@@ -2781,7 +2782,14 @@ const SignatureModule: React.FC<SignatureModuleProps> = ({ prefillData, focusReq
         client_id: selectedClientId, client_name: selectedClientName, auth_method: settings.authMethod,
         // "Bloquear após prazo" desligado tem de significar SEM prazo — antes a
         // data ficava no estado e era enviada mesmo com o interruptor desligado.
-        expires_at: settings.blockAfterDeadline ? (settings.expiresAt || null) : null,
+        //
+        // E a data vai como INSTANTE, no fim do dia escolhido, em Cuiabá. Crua
+        // (`2026-09-10`) o Postgres a lia na sessão do PostgREST, que é UTC, e
+        // o envelope fechava às 20h do dia ANTERIOR — 28 horas antes do que a
+        // tela promete. Ver `src/utils/prazoDoEnvelope.ts`.
+        expires_at: settings.blockAfterDeadline
+          ? fimDoDiaNoEscritorio(settings.expiresAt)
+          : null,
         require_cpf: settings.requireCpf,
         allow_refusal: settings.allowRefusal,
         signing_order: signerOrder === 'sequential' ? 'sequential' : 'parallel',
@@ -2798,26 +2806,10 @@ const SignatureModule: React.FC<SignatureModuleProps> = ({ prefillData, focusReq
         signatarios: payload.signers.length,
         convertidos: congelado.convertidos,
       });
-      created = await signatureService.createRequest(payload);
+      created = await signatureService.createRequest(payload, {
+        sourceProvenance: congelado.proveniencia,
+      });
       console.log('✅ Solicitação criada:', created.id, 'anexos:', (created as any).attachment_paths?.length ?? 0);
-
-      // ── O SERVIDOR CONFERE O QUE FOI CONGELADO ───────────────────────────
-      // Ele relê cada arquivo no Storage e apura ELE MESMO o SHA-256 e o
-      // formato. A impressão digital do documento de origem — a que o dossiê
-      // exibe e a defesa cita — deixa de vir daqui.
-      //
-      // Falha macia: o envelope já existe e vale sem isto, e a função é
-      // idempotente (dá para repetir depois). Mas não passa calado: um
-      // congelamento que não aconteceu tem de aparecer para alguém.
-      const congelamento = await signatureService.congelarOriginalNoServidor(created.id, congelado.proveniencia);
-      if (congelamento.parecer !== 'INTEGRO') {
-        console.warn('[congelamento] parecer do servidor:', congelamento);
-        toast.error(
-          congelamento.parecer === 'NAO_INTEGRO'
-            ? 'Atenção: o servidor encontrou divergência nos arquivos do envelope.'
-            : 'O envelope foi criado, mas o servidor ainda não conferiu os arquivos.',
-        );
-      }
       console.log('📍 Campos de assinatura no estado:', fields.length, fields.map(f => ({ doc: f.documentId, page: f.pageNumber, type: f.fieldType })));
       const createdSignersOrdered = [...created.signers].sort((a, b) => (a.order ?? 0) - (b.order ?? 0));
 
@@ -4040,16 +4032,30 @@ const SignatureModule: React.FC<SignatureModuleProps> = ({ prefillData, focusReq
     window.open(`https://wa.me/${phone}?text=${encodeURIComponent(texto)}`, '_blank');
   };
 
-  /** "hoje às 10:51", "ontem às 18:00", "12 de ago." — para carimbos curtos. */
+  /**
+   * "hoje às 10:51", "ontem às 18:00", "12 de ago." — para carimbos curtos.
+   *
+   * TUDO no relógio do escritório, e o "hoje" TAMBÉM. Antes a hora saía no fuso
+   * do navegador e o `mesmoDia` comparava `toDateString()`, que é local: para
+   * quem abre a tela em Brasília, um ato praticado às 23:30 de Cuiabá já tinha
+   * virado o dia seguinte, e a lista dizia "hoje" para o que o laudo data como
+   * ontem. É a mesma hora, contada em dois relógios — e o documento é ancorado
+   * em Cuiabá.
+   */
   const quandoCurto = (iso: string): string => {
     const d = new Date(iso);
-    const hoje = new Date();
-    const mesmoDia = (a: Date, b: Date) => a.toDateString() === b.toDateString();
-    const ontem = new Date(hoje.getTime() - 86400000);
-    const hora = d.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' });
-    if (mesmoDia(d, hoje)) return `hoje às ${hora}`;
-    if (mesmoDia(d, ontem)) return `ontem às ${hora}`;
-    return d.toLocaleDateString('pt-BR', { day: '2-digit', month: 'short' });
+    const diaDoEscritorio = (x: Date) => x.toLocaleDateString('en-CA', { timeZone: 'America/Cuiaba' });
+    const agora = new Date();
+    const hora = d.toLocaleTimeString('pt-BR', {
+      timeZone: 'America/Cuiaba', hour: '2-digit', minute: '2-digit',
+    });
+    if (diaDoEscritorio(d) === diaDoEscritorio(agora)) return `hoje às ${hora}`;
+    if (diaDoEscritorio(d) === diaDoEscritorio(new Date(agora.getTime() - 86400000))) {
+      return `ontem às ${hora}`;
+    }
+    return d.toLocaleDateString('pt-BR', {
+      timeZone: 'America/Cuiaba', day: '2-digit', month: 'short',
+    });
   };
 
   const timeAgo = (d: string): string => {
@@ -4156,6 +4162,18 @@ const SignatureModule: React.FC<SignatureModuleProps> = ({ prefillData, focusReq
   if (wizardStep !== 'list') {
     const canProceedUpload = selectedDocumentName || uploadedFile || selectedGenDocIds.length > 0;
     const canProceedSigners = signers.every((s) => (s.name ?? '').trim());
+
+    // "Bloquear após prazo" LIGADO e sem data válida é uma promessa que o
+    // envelope não cumpre: `expires_at` sai nulo, o documento nasce sem prazo
+    // nenhum, e a tela não avisa nada porque o interruptor está ligado. O
+    // usuário jura que bloqueou; o banco diz que não.
+    //
+    // A conferência é o próprio `fimDoDiaNoEscritorio`, não um `!== ''`: ele
+    // devolve `null` tanto para vazio quanto para data impossível (31/02) ou no
+    // formato errado — e é ele que decide o que vai para o banco. Perguntar a
+    // quem decide é o que garante que a tela e o `expires_at` concordem.
+    const prazoIncompleto = settings.blockAfterDeadline
+      && fimDoDiaNoEscritorio(settings.expiresAt) === null;
     // TRÊS PASSOS, NÃO CINCO.
     //
     // "Posicionar" era etapa obrigatória para todo mundo, mas o rodapé assinado
@@ -4220,7 +4238,7 @@ const SignatureModule: React.FC<SignatureModuleProps> = ({ prefillData, focusReq
                   <button
                     type="button"
                     onClick={() => void handleSubmit(false)}
-                    disabled={wizardLoading}
+                    disabled={wizardLoading || prazoIncompleto}
                     title="Cria a solicitação e os links, mas não dispara e-mail nem WhatsApp — você envia depois, quando quiser."
                     className="flex items-center gap-2 px-4 py-2 bg-white border border-[#e7e5df] text-slate-700 rounded-lg font-medium hover:bg-slate-50 disabled:opacity-40 disabled:cursor-not-allowed"
                   >
@@ -4229,7 +4247,8 @@ const SignatureModule: React.FC<SignatureModuleProps> = ({ prefillData, focusReq
                   <button
                     type="button"
                     onClick={() => void handleSubmit(true)}
-                    disabled={wizardLoading}
+                    disabled={wizardLoading || prazoIncompleto}
+                    title={prazoIncompleto ? 'Escolha a data limite ou desligue "Bloquear após prazo".' : undefined}
                     className="flex items-center gap-2 px-4 py-2 bg-slate-900 text-white rounded-lg font-medium hover:bg-slate-800 disabled:opacity-40 disabled:cursor-not-allowed"
                   >
                     {wizardLoading ? <Loader2 className="w-4 h-4 animate-spin" /> : <><Send className="w-4 h-4" />Criar e enviar</>}
@@ -5140,8 +5159,16 @@ const SignatureModule: React.FC<SignatureModuleProps> = ({ prefillData, focusReq
                         type="date"
                         value={settings.expiresAt}
                         onChange={(e) => setSettings((s) => ({ ...s, expiresAt: e.target.value }))}
-                        className="w-full rounded-lg border border-[#e7e5df] px-3 py-2 text-sm"
+                        className={`w-full rounded-lg border px-3 py-2 text-sm ${
+                          prazoIncompleto ? 'border-[#C2500F] bg-[#FDF6F1]' : 'border-[#e7e5df]'
+                        }`}
                       />
+                      {prazoIncompleto && (
+                        <p className="mt-1.5 text-xs text-[#C2500F]">
+                          Escolha a data limite — ou desligue “Bloquear após prazo”. Do jeito que
+                          está, o envelope seria criado sem prazo nenhum.
+                        </p>
+                      )}
                     </div>
                   )}
                   <div className="pt-3 border-t border-[#f1f5f9]">
@@ -6890,7 +6917,7 @@ const SignatureModule: React.FC<SignatureModuleProps> = ({ prefillData, focusReq
                         <p style={{ margin: '2px 0 0', fontSize: 11, color: '#94a3b8', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
                           {r.client_name ? <span style={{ color: '#64748b', fontWeight: 500 }}>{r.client_name}</span> : null}
                           {r.client_name ? ' · ' : ''}
-                          Excluído em {r.archived_at ? new Date(r.archived_at).toLocaleDateString('pt-BR', { day: '2-digit', month: 'short', year: 'numeric' }) : '—'}
+                          Excluído em {r.archived_at ? formatDate(r.archived_at) : '—'}
                         </p>
                       </div>
 

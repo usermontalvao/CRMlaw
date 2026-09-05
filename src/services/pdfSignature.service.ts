@@ -401,6 +401,50 @@ class PdfSignatureService {
     }).format(date);
   }
 
+  /**
+   * O MESMO instante nos dois relógios — o espelho de
+   * `formatarDataHoraNosDoisFusos` em `_shared/montagem/dadosDoSignatario.ts`.
+   *
+   * POR QUE EXISTE AQUI TAMBÉM: este arquivo é o plano B da montagem. Enquanto
+   * ele puder produzir um documento assinado (consolidado com anexo, e qualquer
+   * falha do servidor), ele tem de produzir o MESMO documento — e o laudo do
+   * servidor passou a dizer o fuso, enquanto este continuava escrevendo
+   * "19:47:53" sem dizer de onde. Duas versões do mesmo laudo com rótulos
+   * diferentes é exatamente o tipo de divergência que quem confere nota antes
+   * de nós.
+   *
+   * A data de Brasília só se repete quando ela DIFERE: das 23h à meia-noite em
+   * Cuiabá, Brasília já virou o dia, e omitir a data ali faria o laudo datar o
+   * ato no dia anterior.
+   */
+  private formatDateTimeBothZones(
+    value: string | Date | null | undefined,
+    options?: { withSeconds?: boolean },
+  ): string {
+    const date = this.toDateValue(value);
+    if (!date) return 'Nao informado';
+
+    const partes = (timeZone: string) => {
+      const p = new Intl.DateTimeFormat('pt-BR', {
+        timeZone,
+        day: '2-digit', month: '2-digit', year: 'numeric',
+        hour: '2-digit', minute: '2-digit',
+        ...(options?.withSeconds ? { second: '2-digit' as const } : {}),
+      }).formatToParts(date);
+      const de = (tipo: string) => p.find((x) => x.type === tipo)?.value ?? '';
+      const hora = [de('hour'), de('minute'), ...(options?.withSeconds ? [de('second')] : [])]
+        .filter(Boolean).join(':');
+      return { data: `${de('day')}/${de('month')}/${de('year')}`, hora };
+    };
+
+    const cuiaba = partes('America/Cuiaba');
+    const brasilia = partes('America/Sao_Paulo');
+    const ladoDeBrasilia = brasilia.data === cuiaba.data
+      ? brasilia.hora
+      : `${brasilia.data}, ${brasilia.hora}`;
+    return `${cuiaba.data}, ${cuiaba.hora} (Cuiabá) · ${ladoDeBrasilia} (Brasília)`;
+  }
+
   private generateHash(docId: string, signerId: string): string {
     const input = `${docId}-${signerId}`;
     let hash = '';
@@ -794,8 +838,11 @@ class PdfSignatureService {
     // O hash fica de fora de propósito: são 64 caracteres numa faixa vertical
     // de 6pt, ilegíveis na prática, e ele já está no rodapé rotulado.
     if (signedAt) {
+      // O fuso vai junto — o servidor faz igual. Esta é a única marca de hora
+      // nas folhas de CONTEÚDO, e é a que sobrevive quando alguém fotografa
+      // uma folha solta: sem o fuso, "19:47" não diz nada sobre o ato.
       const quando = this.formatCuiabaDateTime(new Date(signedAt));
-      if (quando) partes.push(quando.toUpperCase());
+      if (quando) partes.push(`${quando.toUpperCase()} (CUIABÁ)`);
     }
 
     // O CERTIFICADO QUE SELA, para o fragmento de margem também responder
@@ -1180,6 +1227,22 @@ class PdfSignatureService {
         const cb = page.getCropBox();
         page.setCropBox(cb.x, cb.y - footerReservedHeight, cb.width, cb.height + footerReservedHeight);
       }
+      // ── E A FAIXA NASCE TAPADA, DE BRANCO ──────────────────────────────
+      // Crescer o MediaBox não cria papel em branco: DESCOBRE o que o recorte
+      // da página escondia. Um PDF cuja última linha transborda o pé da folha
+      // — o que a conversão por fatias produz o tempo todo, cortando a imagem
+      // no meio da linha — some com o excedente porque o visualizador recorta
+      // na caixa. Aberta a faixa, ele reaparece, e o rodapé fica por cima de
+      // um texto que ninguém deveria ver ("o rodapé está sobrepondo o
+      // documento"). Tapar restaura o que o original mostrava: nada se perde,
+      // porque nada disso era visível antes.
+      //
+      // Aqui e não no laço do rodapé de propósito: o PDF pinta na ordem do
+      // stream, e a máscara desenhada depois apagaria marca d'água e rodapé.
+      const nova = page.getMediaBox();
+      page.drawRectangle({
+        x: nova.x, y: nova.y, width: nova.width, height: footerReservedHeight, color: rgb(1, 1, 1),
+      });
     }
   }
 
@@ -1286,7 +1349,9 @@ class PdfSignatureService {
       }
     })();
 
-    const nowStr = this.formatCuiabaDateTime(new Date());
+    // O fuso vai junto: `nowStr` é a hora da capa ("Emitido em") e do alto de
+    // todas as folhas do laudo — a única que saía sem dizer de onde é.
+    const nowStr = `${this.formatCuiabaDateTime(new Date())} (Cuiabá)`;
 
     const documentCode = (verificationCode || signer.verification_hash || '').trim().toUpperCase();
     const documentScoped = !!String(verificationCode || '').trim();
@@ -1540,7 +1605,7 @@ class PdfSignatureService {
     let yCards = sectionY1 - 22;
     for (const asset of signerAssets) {
       const item = asset.signer;
-      const signedAtStr = this.formatCuiabaDateTime(item.signed_at, { withSeconds: true });
+      const signedAtStr = this.formatDateTimeBothZones(item.signed_at, { withSeconds: true });
       const authPoints = buildAuthPoints(item);
       const rightColW = 175;
       const rightStartX = pageWidth - lm - rightColW;
@@ -1633,7 +1698,7 @@ class PdfSignatureService {
     for (const asset of signerAssets) {
       const item = asset.signer;
       const page = pdfDoc.addPage([pageWidth, pageHeight]);
-      const signedAtStr = this.formatCuiabaDateTime(item.signed_at, { withSeconds: true });
+      const signedAtStr = this.formatDateTimeBothZones(item.signed_at, { withSeconds: true });
       const geoP2 = this.parseGeolocation(item.signer_geolocation);
       const uaP2  = this.parseUserAgent(item.signer_user_agent);
 
@@ -2252,7 +2317,7 @@ class PdfSignatureService {
 
     // Footer note on last page
     currentHistPage.drawLine({ start: { x: lm, y: 90 }, end: { x: pageWidth - lm, y: 90 }, thickness: 0.5, color: borderSoft });
-    currentHistPage.drawText('Este registro de auditoria é parte integrante do certificado de assinatura. Datas em horário de Cuiabá (UTC-04:00).', { x: lm, y: 77, size: 6.5, font: helvetica, color: txtSoft });
+    currentHistPage.drawText('Este registro de auditoria é parte integrante do certificado de assinatura. Datas em horário de Cuiabá (UTC-04:00); em Brasília (UTC-03:00), uma hora mais tarde.', { x: lm, y: 77, size: 6.5, font: helvetica, color: txtSoft });
     currentHistPage.drawText(`Documento ${request.id}  ·  Jurius`, { x: lm, y: 65, size: 6, font: helvetica, color: silver });
   }
 

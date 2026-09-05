@@ -116,13 +116,45 @@ export function campoEmPorcentagem(
   marcador: RetanguloMedido,
   folha: { largura: number; altura: number },
 ): CampoEmPorcentagem | null {
+  const cru = campoCruEmPorcentagem(marcador, folha);
+  return cru && enquadrarCampo(cru);
+}
+
+/**
+ * A medida NUA, em porcentagem da folha — sem piso nem teto.
+ *
+ * Existe para quem ainda vai MUDAR a régua antes de enquadrar. É o caso da
+ * conversão por fatias no navegador: quando o Word não traz quebra de página, o
+ * documento inteiro sai numa folha só, que vira N páginas — e o piso de 4% de
+ * altura, aplicado à folha, viraria 4·N% da página, uma rubrica gigante. Lá a
+ * ordem certa é medir cru, levar para a página (`campoDaFolhaNaFatia`) e só
+ * então `enquadrarCampo`.
+ *
+ * Quem mede direto sobre a página não precisa disto: use `campoEmPorcentagem`.
+ */
+export function campoCruEmPorcentagem(
+  marcador: RetanguloMedido,
+  folha: { largura: number; altura: number },
+): CampoEmPorcentagem | null {
   if (!(folha.largura > 0) || !(folha.altura > 0)) return null;
 
-  const x = (marcador.esquerda / folha.largura) * 100;
-  const y = (marcador.topo / folha.altura) * 100;
-  const w = (marcador.largura / folha.largura) * 100;
-  const h = (marcador.altura / folha.altura) * 100;
+  return {
+    x_percent: (marcador.esquerda / folha.largura) * 100,
+    y_percent: (marcador.topo / folha.altura) * 100,
+    w_percent: (marcador.largura / folha.largura) * 100,
+    h_percent: (marcador.altura / folha.altura) * 100,
+  };
+}
 
+/**
+ * Aplica os limites descritos acima a um campo já em porcentagem DA PÁGINA.
+ *
+ * Idempotente: enquadrar duas vezes dá o mesmo resultado. É por isso que ela
+ * pode ser chamada no fim de qualquer caminho, sem quem chama precisar saber se
+ * alguém já enquadrou antes.
+ */
+export function enquadrarCampo(campo: CampoEmPorcentagem): CampoEmPorcentagem {
+  const { x_percent: x, y_percent: y, w_percent: w, h_percent: h } = campo;
   return {
     x_percent: Math.max(0, Math.min(100, x)),
     y_percent: Math.max(0, Math.min(100, y)),

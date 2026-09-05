@@ -76,8 +76,24 @@ export function ondeParou(degraus: DegrauDaAssinatura[]): string {
   return `Parou antes de: ${atual.rotulo.toLowerCase()}`;
 }
 
+/**
+ * A escada mostra o relógio DO ESCRITÓRIO, nunca o de quem abre a tela.
+ *
+ * Sem o `timeZone` isto lia o fuso do navegador — e a mesma etapa aparecia numa
+ * hora aqui e noutra no PDF assinado, que é ancorado em Cuiabá de ponta a
+ * ponta. Um colaborador em Brasília via "20:47" na escada e "19:47" no laudo do
+ * mesmo ato; entre 23h e a meia-noite a divergência vira um DIA de diferença.
+ *
+ * O fuso é fixo, e não o configurável de `officeTime.ts`, de propósito: o laudo
+ * é gravado com Cuiabá no papel e a Edge Function não lê configuração de
+ * escritório. A tela tem de concordar com o documento, não com um ajuste que o
+ * documento não conhece.
+ */
 const hora = (iso: string) =>
-  new Date(iso).toLocaleString('pt-BR', { day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit' });
+  new Date(iso).toLocaleString('pt-BR', {
+    timeZone: 'America/Cuiaba',
+    day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit',
+  });
 
 /** Fita compacta — cabe numa linha de lista. */
 export const FitaDeDegraus: React.FC<{ degraus: DegrauDaAssinatura[] }> = ({ degraus }) => (

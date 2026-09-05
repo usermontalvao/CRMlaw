@@ -37,7 +37,11 @@ const VAO_ENTRE_EVENTOS = 11;
 
 export const NOTA_DA_TRILHA =
   'Este registro de auditoria é parte integrante do certificado de assinatura. '
-  + 'Datas em horário de Cuiabá (UTC-04:00).';
+  // Os dois relógios ficam DITOS aqui porque a trilha é a única página onde a
+  // hora aparece dezenas de vezes: repetir "(Cuiabá) · (Brasília)" em cada
+  // evento encheria a folha e atrapalharia justamente a leitura da ordem dos
+  // atos. A conversão fica escrita uma vez, e a página inteira herda.
+  + 'Datas em horário de Cuiabá (UTC-04:00); em Brasília (UTC-03:00), uma hora mais tarde.';
 
 /**
  * A cor de cada tipo de evento — o que o leitor usa para varrer a página sem

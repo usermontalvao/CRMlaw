@@ -446,7 +446,14 @@ Deno.serve(async (req: Request) => {
 
     const assinadoEm = assinados.find((s) => s.id === signerId)?.signed_at
       ?? assinados[assinados.length - 1]?.signed_at ?? null;
-    const emitidoEm = formatarDataHoraDoEscritorio(new Date());
+    // O FUSO VAI JUNTO, pela mesma razão do carimbo da folha de conteúdo.
+    // `emitidoEm` é a ÚNICA hora que aparece na capa e no alto de TODAS as
+    // folhas do laudo — e era a única que saía sem dizer de onde é. A nota que
+    // explica o fuso mora só no pé da trilha; quem lê a capa, ou fotografa o
+    // cabeçalho, não a leva junto. Num documento que vira prova, hora sem fuso
+    // é afirmação ambígua, e a ambiguidade cai justamente sobre quando o
+    // certificado foi emitido.
+    const emitidoEm = `${formatarDataHoraDoEscritorio(new Date())} (Cuiabá)`;
 
     const resultado = await montarDocumentoAssinado({
       documento: doc as any,
@@ -467,7 +474,12 @@ Deno.serve(async (req: Request) => {
         protocolo: requestId,
         sha256DoOriginal: shaAgora,
         urlDeVerificacao,
-        assinadoEm: formatarDataHoraDoEscritorio(assinadoEm),
+        // O FUSO VAI JUNTO. Este carimbo é a única marca de hora nas folhas de
+        // CONTEÚDO — a nota de fuso da trilha está lá no fim, e a folha solta
+        // que alguém fotografa não a leva junto. "17:57" sem origem, num
+        // documento que vira prova, é uma afirmação ambígua sobre a hora de um
+        // ato jurídico. Conferido que cabe: 515 pt de 694 disponíveis.
+        assinadoEm: `${formatarDataHoraDoEscritorio(assinadoEm)} (Cuiabá)`,
         seloCurto: seloImpressaoCurta(4),
       },
       qr,

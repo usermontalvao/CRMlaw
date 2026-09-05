@@ -7,6 +7,8 @@ import {
   interpretarAgenteDeUsuario,
   interpretarGeolocalizacao,
   paraData,
+  formatarDataHoraDeBrasilia,
+  formatarDataHoraNosDoisFusos,
 } from './dadosDoSignatario.ts';
 
 // ── Agente de usuário ───────────────────────────────────────────────────────
@@ -97,4 +99,37 @@ test('valor ausente ou inválido não vira "Invalid Date" no documento', () => {
   assert.equal(formatarDataHoraDoEscritorio(null), 'Nao informado');
   assert.equal(formatarDataHoraDoEscritorio('nem data isso é'), 'Nao informado');
   assert.equal(paraData('nem data isso é'), null);
+});
+
+// --- os dois relógios ---------------------------------------------------
+
+test('Brasília é uma hora à frente de Cuiabá, no mesmo instante', () => {
+  const instante = '2026-09-04T21:57:36.000Z';
+  assert.equal(formatarDataHoraDoEscritorio(instante, { comSegundos: true }), '04/09/2026, 17:57:36');
+  assert.equal(formatarDataHoraDeBrasilia(instante, { comSegundos: true }), '04/09/2026, 18:57:36');
+});
+
+test('o laudo afirma o instante nos dois fusos, com a data uma vez só', () => {
+  assert.equal(
+    formatarDataHoraNosDoisFusos('2026-09-04T21:57:36.000Z', { comSegundos: true }),
+    '04/09/2026, 17:57:36 (Cuiabá) · 18:57:36 (Brasília)',
+  );
+});
+
+test('perto da meia-noite a data de Brasília VOLTA, porque ela já virou', () => {
+  // 03:30 UTC = 23:30 do dia 4 em Cuiabá e 00:30 do dia 5 em Brasília. Sem
+  // repetir a data, o documento afirmaria que o ato foi às 00:30 do dia 4 —
+  // um dia inteiro de erro na hora de um ato jurídico.
+  const virada = '2026-09-05T03:30:00.000Z';
+  assert.equal(formatarDataHoraDoEscritorio(virada), '04/09/2026, 23:30');
+  assert.equal(formatarDataHoraDeBrasilia(virada), '05/09/2026, 00:30');
+  assert.equal(
+    formatarDataHoraNosDoisFusos(virada),
+    '04/09/2026, 23:30 (Cuiabá) · 05/09/2026, 00:30 (Brasília)',
+  );
+});
+
+test('sem instante, os dois fusos dizem a mesma ausência do resto do laudo', () => {
+  assert.equal(formatarDataHoraNosDoisFusos(null), 'Nao informado');
+  assert.equal(formatarDataHoraDeBrasilia(undefined), 'Nao informado');
 });

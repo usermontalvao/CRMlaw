@@ -37,6 +37,83 @@ export type ReleaseNote = {
 
 export const releases: ReleaseNote[] = [
   {
+    version: '1.22.20',
+    date: '05/09/2026',
+    summary: 'A assinatura passa a recusar o que antes aceitava calado: caminho de arquivo que não é do envelope, documento que não existe no kit e prazo prometido sem data.',
+    modules: [
+      {
+        moduleId: 'assinaturas',
+        changes: [
+          {
+            type: 'security' as const,
+            title: 'O arquivo assinado tem de ser desta solicitação, e tem de existir',
+            description: 'As duas rotinas que registram o PDF assinado — a do documento único e a do kit — passam a exigir as mesmas provas: envelope em circulação (não cancelado, bloqueado ou na lixeira), arquivo dentro da pasta da própria solicitação e arquivo realmente presente no armazenamento. Uma delas nunca teve nenhuma dessas conferências: com o link do signatário dava para apontar o documento de outro envelope como se fosse o assinado, e esse arquivo alheio passava a ser legível pelo mesmo link.',
+          },
+          {
+            type: 'security' as const,
+            title: 'O kit só aceita os documentos que ele tem',
+            description: 'Antes, qualquer nome de documento era aceito e virava registro permanente com o código de verificação que o chamador escolhesse. Como cada registro conta para fechar o envelope, dava para forçar a conclusão com o documento de verdade ainda faltando. Agora o nome tem de ser o principal ou um anexo que existe no kit.',
+          },
+          {
+            type: 'security' as const,
+            title: 'O original congelado não se troca mais nem mudando o caminho',
+            description: 'A conferência de integridade do arquivo de origem só acusava divergência quando o caminho continuava o mesmo. Trocar o ponteiro do envelope para outro arquivo substituía a impressão digital registrada sem deixar registro. Agora qualquer diferença — nos bytes ou no caminho — preserva o valor original e grava a violação.',
+          },
+          {
+            type: 'fix' as const,
+            title: 'Nunca mais dois documentos assinados para o mesmo ato',
+            description: 'Se o servidor demorasse mais que a janela de espera, o celular começava a montar por conta própria enquanto o servidor ainda trabalhava, e os dois terminavam — cada um gravando o seu arquivo, com impressões digitais diferentes. Agora, enquanto houver trabalho vivo no servidor, a tela espera e avisa que está finalizando; o servidor conclui em até um minuto, mesmo com a página fechada.',
+          },
+          {
+            type: 'fix' as const,
+            title: 'A tela mostra o documento que ficou registrado',
+            description: 'Quando a gravação era recusada — porque o servidor havia chegado primeiro —, a página comemorava assim mesmo e exibia o arquivo montado no aparelho, que o envelope não reconhece. Agora ela confirma qual documento ficou valendo e é esse que aparece para baixar e compartilhar.',
+          },
+          {
+            type: 'fix' as const,
+            title: 'O selo criptográfico deixa de se declarar pronto pela metade',
+            description: 'Se o registro do selo no banco falhasse, a resposta ainda dizia "assinado" e a tentativa seguinte não corrigia nada — o arquivo ficava selado anunciando a impressão digital antiga, e o evento sumia da trilha para sempre. Agora a falha é reportada, a chamada seguinte repara o que ficou para trás e a trilha do selo é garantida.',
+          },
+          {
+            type: 'fix' as const,
+            title: '"Bloquear após prazo" não cria mais envelope sem prazo',
+            description: 'Dava para ligar a opção e deixar a data em branco: o envelope nascia sem prazo nenhum, com a tela dizendo que estava bloqueado. Agora a criação fica travada até a data ser escolhida — ou a opção, desligada. Vale também para data impossível, como 31 de fevereiro.',
+          },
+          {
+            type: 'fix' as const,
+            title: 'O prazo vale o dia inteiro, no fuso do escritório',
+            description: 'A data escolhida era lida em UTC e o link parava de aceitar assinatura às oito da noite do dia ANTERIOR — 28 horas antes do que a tela prometia. Agora quem escolhe "dia 10" tem o dia 10 inteiro, em Cuiabá, no mesmo fuso em que o documento é carimbado.',
+          },
+          {
+            type: 'fix' as const,
+            title: 'A assinatura volta a cair na página certa',
+            description: 'Em documento do Word sem quebra de página explícita, o marcador de assinatura era carimbado no pé da primeira página, por cima do texto, e a linha do assinante saía em branco nas demais. A posição passa a ser calculada sobre a página do PDF em que o campo realmente caiu.',
+          },
+          {
+            type: 'improvement' as const,
+            title: 'A mesma hora em todo lugar',
+            description: 'A escada de assinatura, o "hoje às" da fila e o "excluído em" da lixeira formatavam no relógio de quem abria a tela. Entre 23h e a meia-noite, o mesmo ato aparecia com duas datas. Tudo passa a falar no fuso do escritório, igual ao que está impresso no documento.',
+          },
+        ],
+      },
+      {
+        moduleId: 'documentos',
+        changes: [
+          {
+            type: 'improvement' as const,
+            title: 'Word não entra mais no envelope',
+            description: 'Ao enviar para assinatura, o documento principal e os anexos são convertidos para PDF pela mesma paginação usada no designer, e o servidor relê os bytes antes de liberar a solicitação. Marcadores automáticos deixam de aparecer no arquivo convertido.',
+          },
+          {
+            type: 'fix' as const,
+            title: 'Licença do editor e da conversão passam a ser separadas',
+            description: 'Eram uma variável só, com as duas chaves grudadas — quando uma vencia, não dava para saber qual. Agora cada uso tem a sua, a antiga continua valendo, e uma chave colada com o nome da variável junto é descartada com aviso em vez de estampar a marca d\'água de avaliação no documento.',
+          },
+        ],
+      },
+    ],
+  },
+  {
     version: '1.22.19',
     date: '04/09/2026',
     summary: 'A montagem dos documentos assinados sai do celular e continua no servidor mesmo depois que a página é fechada.',
