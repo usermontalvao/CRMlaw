@@ -37,6 +37,33 @@ export type ReleaseNote = {
 
 export const releases: ReleaseNote[] = [
   {
+    version: '1.22.21',
+    date: '05/09/2026',
+    summary: 'A página de conferência para de AFIRMAR de quem é o selo e passa a CONFRONTAR: lê o certificado dentro do PDF, lê o que o servidor publica e mostra as duas impressões digitais uma sobre a outra. E o laudo passa a citar o dispositivo da MP que ampara a assinatura, em vez de só apontá-lo.',
+    modules: [
+      {
+        moduleId: 'assinaturas',
+        changes: [
+          {
+            type: 'feature' as const,
+            title: 'O nome do selo agora é transcrito do certificado, não digitado por nós',
+            description: 'O bloco "Certificado que selou" trazia um nome escrito à mão no código e uma impressão digital copiada de uma constante. Quem lia a página não tinha como saber se aquele nome era o nome que está DENTRO do certificado. Agora o titular, o emissor, o número de série e a validade são lidos do próprio certificado, campo por campo — e aparece, por exemplo, o "(autoassinado)" que a versão escrita à mão omitia, que é justamente o que um cartório precisa ver.',
+          },
+          {
+            type: 'feature' as const,
+            title: 'O confronto: o certificado do arquivo contra o certificado do servidor',
+            description: 'A página passa a extrair o certificado que viaja dentro da assinatura do PDF (no PKCS#7) e a baixar o certificado que o Jurius publica, calcular as duas impressões digitais SHA-256 no navegador de quem confere e mostrá-las uma sobre a outra, com o veredicto. Se conferem, a página diz que o certificado embutido é byte a byte o mesmo que publicamos. Se divergem, o cartão inteiro fica vermelho e avisa que o arquivo foi selado com outro certificado. Sem os bytes do PDF — consulta só pelo código — a página mostra um lado só e diz que mostrou um lado só: "confere" nunca aparece sem os dois lados.',
+          },
+          {
+            type: 'improvement' as const,
+            title: 'O laudo cita o § 2º da MP 2.200-2/2001, em vez de só mencionar a lei',
+            description: 'O bloco do certificado dizia "assinatura eletrônica válida nos termos da MP 2.200-2/2001" — uma afirmação nossa sobre a lei, que a parte contrária teria de ir conferir por fora. Agora vem transcrito, entre aspas e com a fonte, o dispositivo que ampara exatamente este arquivo: o § 2º do art. 10, que admite outro meio de comprovação de autoria e integridade, inclusive com certificado fora da ICP-Brasil, desde que aceito pelas partes. Dita pela lei, e com a condição que ela própria impõe, a informação vira fundamento.',
+          },
+        ],
+      },
+    ],
+  },
+  {
     version: '1.22.20',
     date: '05/09/2026',
     summary: 'A assinatura passa a recusar o que antes aceitava calado: caminho de arquivo que não é do envelope, documento que não existe no kit e prazo prometido sem data.',

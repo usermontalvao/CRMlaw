@@ -30,6 +30,8 @@ import {
   type SignatarioDoDossie,
   type SituacaoDoSignatario,
 } from '../../utils/assinaturaPublica';
+import type { ConfrontoDoSelo, LadoDoConfronto } from '../../utils/certificadoDoSelo';
+import type { StatusIntegridade } from '../../utils/integridadeAssinatura';
 
 const MONO = 'ui-monospace, SFMono-Regular, Menlo, monospace';
 
@@ -638,50 +640,181 @@ export const Opcao: React.FC<{
  *
  * O que NÃO pode sair é a impressão digital: sem ela o cartão afirmaria
  * "assinatura criptográfica" sem dar como conferir de quem ela é, e a página
- * inteira existe para permitir conferência, não para pedir fé. Quem quiser o
- * certificado inteiro o tem dentro do próprio PDF assinado — ele viaja no
- * PKCS#7, e a impressão daqui é o que permite compará-los.
+ * inteira existe para permitir conferência, não para pedir fé.
+ *
+ * ── O QUE MUDOU: DE AFIRMAÇÃO PARA CONFRONTO ──────────────────────────────
+ *
+ * O bloco do certificado trazia duas frases escritas por nós: o nome do selo,
+ * digitado no JSX, e a impressão digital, copiada de uma constante. Quem lê a
+ * página não tinha como saber se aquele nome é o nome que está DENTRO do
+ * certificado, nem se o certificado que assinou o PDF é o mesmo que
+ * publicamos. Era pedir fé, de novo, no meio da página que existe para não
+ * pedir fé.
+ *
+ * Agora os dois campos são LIDOS (ver `utils/certificadoDoSelo.ts`): o nome, o
+ * emissor, a série e a validade saem do próprio certificado, e as duas
+ * impressões — a do arquivo publicado em `/selo-de-integridade.crt` e a do
+ * certificado que viaja no PKCS#7 do PDF — aparecem uma sobre a outra, com o
+ * veredicto. É o confronto, e ele acontece no navegador de quem confere.
+ *
+ * A REGRA DE HONESTIDADE DO VEREDICTO. `confere` só pode aparecer quando os
+ * DOIS lados foram lidos. Sem os bytes do PDF (consulta por código, ou CORS
+ * barrando o download) o cartão mostra um lado só e diz que mostrou um lado
+ * só. E, mesmo com os dois, o que se afirma é estreito: que o PDF foi selado
+ * com o certificado que publicamos — a matemática da assinatura continua sendo
+ * conferida pelo leitor de PDF, e o texto acima é que promete isso.
  */
+
+/** Data curta a partir do ISO do certificado. Vazio some, nunca vira "Invalid". */
+const dataDoCertificado = (iso: string): string => {
+  if (!iso) return '';
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return '';
+  return d.toLocaleDateString('pt-BR', { timeZone: 'UTC' });
+};
+
+/** A linha de identificação do certificado, transcrita campo a campo. */
+const LinhaDoConfronto: React.FC<{
+  rotulo: string;
+  impressao: string;
+  destaque: boolean;
+}> = ({ rotulo, impressao, destaque }) => (
+  <div style={{ display: 'flex', gap: 8, alignItems: 'baseline', marginTop: 4 }}>
+    <span style={{
+      // O rótulo não quebra, e a coluna tem largura fixa: é isso que deixa as
+      // duas impressões começando na MESMA coluna, uma sobre a outra. Sem o
+      // alinhamento não há confronto — há dois códigos soltos.
+      flex: '0 0 92px', whiteSpace: 'nowrap', fontSize: 9, fontWeight: 700, letterSpacing: '.07em',
+      textTransform: 'uppercase', color: TINTA_3,
+    }}>
+      {rotulo}
+    </span>
+    <code style={{
+      minWidth: 0, flex: 1, fontFamily: MONO, fontSize: 9.5, lineHeight: 1.55,
+      color: destaque ? TINTA_2 : TINTA_3, wordBreak: 'break-all',
+    }}>
+      {impressao}
+    </code>
+  </div>
+);
+
 export const SeloDeIntegridade: React.FC<{
   seladoEm?: string | null;
   total: number;
   selados: number;
+  /** A impressão da constante — só entra quando o certificado não pôde ser lido. */
   impressao: string;
-}> = ({ seladoEm, total, selados, impressao }) => {
+  /** O confronto, quando já houver: `null` enquanto carrega. */
+  confronto?: ConfrontoDoSelo | null;
+  /** Comparação entre o PDF servido agora e o SHA-256 imutável do registro. */
+  integridade?: {
+    status: StatusIntegridade;
+    hashRegistrado: string | null;
+    hashAtual: string | null;
+  } | null;
+  /** O arquivo público do certificado, para quem quiser conferir por fora. */
+  urlDoCertificado?: string;
+}> = ({ seladoEm, total, selados, impressao, confronto, integridade, urlDoCertificado }) => {
   const completo = total > 0 && selados >= total;
+  const veredicto = confronto?.veredicto ?? 'indisponivel';
+  const certificadoDiverge = veredicto === 'diverge';
+  const arquivoDiverge = integridade?.status === 'mismatch';
+  const conferindoArquivo = integridade?.status === 'checking';
+  const arquivoInconclusivo = integridade?.status === 'unavailable';
+  const arquivoConfere = integridade?.status === 'valid';
+  const diverge = certificadoDiverge || arquivoDiverge;
+  // Na divergência o cartão inteiro muda de tom: é a única coisa nesta página
+  // que pode significar documento adulterado, e ela não pode passar como um
+  // detalhe cinza dentro de um cartão verde.
+  const tom = diverge
+    ? 'alerta'
+    : conferindoArquivo || arquivoInconclusivo
+      ? 'parcial'
+      : completo ? 'pronto' : 'parcial';
+  const fundo = tom === 'alerta'
+    ? '#fef2f2'
+    : tom === 'pronto' ? 'linear-gradient(180deg,#f8fdfa,#f4fbf7)' : '#fffbeb';
+  const borda = tom === 'alerta' ? '#fecaca' : tom === 'pronto' ? '#bbf7d0' : '#fde68a';
+  const tinta = tom === 'alerta' ? '#b91c1c' : tom === 'pronto' ? '#047857' : '#b45309';
+  const escudo = tom === 'alerta'
+    ? 'linear-gradient(135deg,#f87171,#dc2626)'
+    : tom === 'pronto'
+      ? 'linear-gradient(135deg,#34d399,#059669)'
+      : 'linear-gradient(135deg,#fbbf24,#d97706)';
+
+  /* O lado que dá o CARTÃO DE IDENTIDADE do selo. O do documento tem
+     precedência: é o certificado que está no arquivo que a pessoa tem em mãos,
+     e é dele que o nome exibido deve sair. O do servidor só aparece sozinho
+     quando o do documento não pôde ser lido. */
+  const identidade: LadoDoConfronto | null = confronto?.documento || confronto?.servidor || null;
+  // Organização antes de unidade: "Jurius · Validador Publico" lê como
+  // "quem, e qual setor"; o inverso lê como uma sigla solta seguida de nome.
+  const local = [identidade?.organizacao, identidade?.unidade].filter(Boolean).join(' · ');
+  const de = dataDoCertificado(identidade?.validoDe || '');
+  const ate = dataDoCertificado(identidade?.validoAte || '');
+  const tituloDoSelo = arquivoDiverge
+    ? 'Documento violado — conteúdo alterado'
+    : certificadoDiverge
+      ? 'O certificado deste arquivo não é o nosso'
+      : conferindoArquivo
+        ? 'Conferindo a integridade do arquivo'
+        : arquivoInconclusivo
+          ? 'Integridade do arquivo inconclusiva'
+          : completo
+            ? 'Este arquivo carrega assinatura criptográfica'
+            : `Selo parcial — ${selados} de ${total} arquivos`;
+
   return (
     <div style={{
       marginTop: 14, padding: '15px 17px', borderRadius: 14,
-      background: completo ? 'linear-gradient(180deg,#f8fdfa,#f4fbf7)' : '#fffbeb',
-      border: `1px solid ${completo ? '#bbf7d0' : '#fde68a'}`,
+      background: fundo, border: `1px solid ${borda}`,
     }}>
       <div style={{ display: 'flex', gap: 11, alignItems: 'flex-start' }}>
         <span style={{
           flex: '0 0 auto', width: 30, height: 30, borderRadius: 9, marginTop: 1,
           display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#fff',
-          background: completo
-            ? 'linear-gradient(135deg,#34d399,#059669)'
-            : 'linear-gradient(135deg,#fbbf24,#d97706)',
+          background: escudo,
         }}>
           <svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor"
                strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
-            <path d="M12 3l7 3v5c0 4.4-3 8.4-7 10-4-1.6-7-5.6-7-10V6z" /><path d="M9 12l2 2 4-4" />
+            <path d="M12 3l7 3v5c0 4.4-3 8.4-7 10-4-1.6-7-5.6-7-10V6z" />
+            {diverge ? <path d="M12 8v4M12 16h.01" /> : <path d="M9 12l2 2 4-4" />}
           </svg>
         </span>
         <div style={{ minWidth: 0, flex: 1 }}>
           <span style={{
-            display: 'block', fontSize: 14, fontWeight: 700, letterSpacing: '-.2px',
-            color: completo ? '#047857' : '#b45309',
+            display: 'block', fontSize: 14, fontWeight: 700, letterSpacing: '-.2px', color: tinta,
           }}>
-            {completo
-              ? 'Este arquivo carrega assinatura criptográfica'
-              : `Selo parcial — ${selados} de ${total} arquivos`}
+            {tituloDoSelo}
           </span>
           <p style={{ margin: '5px 0 0', fontSize: 12.5, lineHeight: 1.6, color: TINTA_2 }}>
-            O PDF que você baixa aqui traz uma assinatura digital embutida. Qualquer alteração
-            posterior a quebra, e <strong>qualquer leitor de PDF detecta</strong> — sem depender
-            desta página.
-            {seladoEm ? ` Selado em ${dataLonga(seladoEm)}.` : ''}
+            {arquivoDiverge ? (
+              <>
+                O SHA-256 do PDF servido agora é <strong>diferente</strong> do hash registrado
+                quando ele foi assinado. O arquivo sofreu alteração posterior e não deve ser aceito.
+              </>
+            ) : certificadoDiverge ? (
+              <>
+                O PDF traz assinatura digital, mas ela foi feita com um certificado
+                <strong> diferente</strong> do que o Jurius publica. Confira as duas impressões
+                abaixo e abra o arquivo num leitor de PDF antes de aceitá-lo.
+              </>
+            ) : conferindoArquivo ? (
+              <>Aguarde enquanto calculamos o SHA-256 do PDF armazenado e confrontamos com o registro.</>
+            ) : arquivoInconclusivo ? (
+              <>
+                O registro foi localizado, mas não foi possível ler os bytes do PDF para confirmar
+                sua integridade. Este estado não deve ser tratado como documento íntegro.
+              </>
+            ) : (
+              <>
+                O PDF traz uma assinatura digital embutida.
+                {arquivoConfere ? ' O SHA-256 dos bytes servidos confere com o registro.' : ''}
+                {' '}Alterações posteriores são detectadas por leitores compatíveis com assinaturas
+                digitais, sem depender desta página.
+                {seladoEm ? ` Selado em ${dataLonga(seladoEm)}.` : ''}
+              </>
+            )}
           </p>
 
           <div style={{
@@ -694,18 +827,78 @@ export const SeloDeIntegridade: React.FC<{
             }}>
               Certificado que selou
             </span>
+
+            {/* O NOME, transcrito do certificado. Sem certificado legível, o
+                rótulo do sistema — nunca uma frase que finja ter sido lida. */}
             <span style={{ display: 'block', marginTop: 3, fontSize: 12.5, fontWeight: 600, color: TINTA }}>
-              Jurius — Selo de Integridade
+              {identidade?.nome || 'Jurius — Selo de Integridade'}
             </span>
-            <code style={{
-              display: 'block', marginTop: 5, fontFamily: MONO, fontSize: 10,
-              lineHeight: 1.6, color: TINTA_3, wordBreak: 'break-all',
-            }}>
-              SHA-256 {impressao}
-            </code>
+            {identidade && (
+              <span style={{ display: 'block', marginTop: 2, fontSize: 11, lineHeight: 1.5, color: TINTA_3 }}>
+                {local}
+                {identidade.autoassinado
+                  ? ' · Emitido por si mesmo'
+                  : identidade.emissor ? ` · Emitido por ${identidade.emissor}` : ''}
+                {de && ate ? ` · Válido de ${de} a ${ate}` : ''}
+              </span>
+            )}
+
+            {/* ── O CONFRONTO ────────────────────────────────────────────── */}
+            <div style={{ marginTop: 9, paddingTop: 8, borderTop: `1px dashed ${LINHA}` }}>
+              {confronto?.documento && (
+                <LinhaDoConfronto
+                  rotulo="No documento"
+                  impressao={confronto.documento.impressao}
+                  destaque
+                />
+              )}
+              <LinhaDoConfronto
+                rotulo={confronto?.documento ? 'No servidor' : 'SHA-256'}
+                impressao={confronto?.servidor?.impressao || impressao}
+                destaque={!confronto?.documento}
+              />
+
+              <p style={{ margin: '8px 0 0', fontSize: 11, lineHeight: 1.55, color: diverge ? '#b91c1c' : TINTA_2 }}>
+                {veredicto === 'confere' && arquivoDiverge && (
+                  <>
+                    <strong style={{ color: '#b91c1c' }}>Os certificados conferem, mas o arquivo não.</strong>{' '}
+                    A impressão identifica o certificado embutido; ela não anula a divergência do
+                    SHA-256 do PDF.
+                  </>
+                )}
+                {veredicto === 'confere' && !arquivoDiverge && (
+                  <>
+                    <strong style={{ color: VERDE }}>As duas impressões conferem.</strong>{' '}
+                    O certificado embutido neste PDF é, byte a byte, o mesmo que o Jurius publica.
+                    {arquivoConfere ? ' O SHA-256 do arquivo também confere com o registro.' : ''}
+                  </>
+                )}
+                {veredicto === 'diverge' && (
+                  <><strong>As impressões não conferem.</strong> O certificado dentro do arquivo
+                    não é o que o Jurius publica.</>
+                )}
+                {veredicto !== 'confere' && veredicto !== 'diverge' && (
+                  <>
+                    Esta é a impressão do certificado que o Jurius publica. Para confrontá-la com a
+                    do certificado que está <em>dentro</em> do arquivo, abra o PDF num leitor e
+                    consulte as propriedades da assinatura.
+                  </>
+                )}
+                {urlDoCertificado && (
+                  <>
+                    {' '}
+                    <a
+                      href={urlDoCertificado}
+                      download
+                      style={{ color: TINTA_2, textDecoration: 'underline', whiteSpace: 'nowrap' }}
+                    >
+                      Baixar o certificado
+                    </a>
+                  </>
+                )}
+              </p>
+            </div>
           </div>
-
-
         </div>
       </div>
     </div>

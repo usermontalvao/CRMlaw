@@ -45,6 +45,19 @@ export function mesmoHash(a: string | null | undefined, b: string | null | undef
   return x === y;
 }
 
+/** SHA-256 dos bytes que efetivamente chegaram ao navegador. */
+export async function calcularSha256Hex(bytes: Uint8Array): Promise<string> {
+  const trecho = bytes.buffer.slice(
+    bytes.byteOffset,
+    bytes.byteOffset + bytes.byteLength,
+  ) as ArrayBuffer;
+  const resumo = await crypto.subtle.digest('SHA-256', trecho);
+  return Array.from(new Uint8Array(resumo))
+    .map((byte) => byte.toString(16).padStart(2, '0'))
+    .join('')
+    .toUpperCase();
+}
+
 // ═══════════════════════════════════════════════════════════════════════════
 // 2. SELAGEM — o hash vem DEPOIS do PDF pronto
 // ═══════════════════════════════════════════════════════════════════════════

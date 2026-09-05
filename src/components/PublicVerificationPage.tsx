@@ -60,7 +60,13 @@ import type { Signer, SignatureRequest } from '../types/signature.types';
 import { DISPLAY_APP_VERSION_LABEL } from '../utils/appVersion';
 import { buildPublicSignatureTermsUrl } from '../utils/publicAppUrl';
 // A impressão digital do certificado vive num lugar só — ver constants/selo.ts.
-import { SELO_IMPRESSAO_DIGITAL } from '../constants/selo';
+import { SELO_IMPRESSAO_DIGITAL, SELO_URL_DO_CERTIFICADO } from '../constants/selo';
+import { montarConfronto, type ConfrontoDoSelo } from '../utils/certificadoDoSelo';
+import {
+  calcularSha256Hex,
+  conferirDocumento,
+  type StatusIntegridade,
+} from '../utils/integridadeAssinatura';
 
 interface VerificationResult extends VerifyDossier {
   valid: boolean;
@@ -73,6 +79,23 @@ interface VerificationResult extends VerifyDossier {
 const stripDocumentExtension = (name: string | null | undefined): string => {
   return String(name || '').trim().replace(/\.(pdf|docx?|rtf|odt)$/i, '');
 };
+
+/** Evita que uma sobrescrita no mesmo caminho seja escondida pelo cache do Storage/CDN. */
+const urlSemCache = (url: string): string => {
+  try {
+    const atual = new URL(url);
+    atual.searchParams.set('jurius_integrity_check', `${Date.now()}`);
+    return atual.toString();
+  } catch {
+    return url;
+  }
+};
+
+interface ConferenciaDoPdf {
+  status: StatusIntegridade;
+  hashRegistrado: string | null;
+  hashAtual: string | null;
+}
 
 const PublicVerificationPage: React.FC = () => {
   const [hash, setHash] = useState('');
@@ -96,6 +119,18 @@ const PublicVerificationPage: React.FC = () => {
   const [previaFalhou, setPreviaFalhou] = useState(false);
   /** Qual chip acabou de ser copiado — o certinho verde dura 1,6 s. */
   const [copiado, setCopiado] = useState('');
+  /*
+    O CONFRONTO DO CERTIFICADO.
+
+    `bytesDoPdf` é o arquivo assinado em mãos — o que a pessoa enviou, ou o que
+    a prévia baixou. É dele que se extrai o certificado embutido no PKCS#7 para
+    confrontar com o que o servidor publica. Fica em estado, e não numa variável
+    da função, porque as duas origens são assíncronas e chegam em momentos
+    diferentes.
+  */
+  const [bytesDoPdf, setBytesDoPdf] = useState<Uint8Array | null>(null);
+  const [confronto, setConfronto] = useState<ConfrontoDoSelo | null>(null);
+  const [integridadePdf, setIntegridadePdf] = useState<ConferenciaDoPdf | null>(null);
 
   const extractCodeFromUrl = () => {
     const hashRoute = typeof window !== 'undefined' ? window.location.hash || '' : '';
@@ -125,6 +160,11 @@ const PublicVerificationPage: React.FC = () => {
     try {
       setLoading(true);
       setSearched(true);
+      // Consulta nova, arquivo novo: sem isto o confronto do certificado
+      // continuaria mostrando o PDF da consulta ANTERIOR ao lado do novo
+      // registro — o pior tipo de erro que esta página pode cometer.
+      setBytesDoPdf(null);
+      setIntegridadePdf(null);
       const data = await signatureService.verifySignatureByHash(codeToUse);
       if (data && data.status === 'valid') {
         setResult({
@@ -164,22 +204,20 @@ const PublicVerificationPage: React.FC = () => {
     }
   };
 
-  const sha256Hex = async (bytes: Uint8Array): Promise<string> => {
-    const ab = bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength) as ArrayBuffer;
-    const hashBuffer = await crypto.subtle.digest('SHA-256', ab);
-    const hashArray = Array.from(new Uint8Array(hashBuffer));
-    return hashArray.map((b) => b.toString(16).padStart(2, '0')).join('').toUpperCase();
-  };
-
   const handleVerifyFile = async (file: File) => {
     try {
       setFileLoading(true);
       setSearched(true);
       setResult(null);
+      setBytesDoPdf(null);
+      setIntegridadePdf(null);
 
       const bytes = new Uint8Array(await file.arrayBuffer());
-      const computed = await sha256Hex(bytes);
+      const computed = await calcularSha256Hex(bytes);
       setFileHash(computed);
+      // O arquivo que a PESSOA trouxe é a melhor fonte possível para o
+      // confronto do certificado: não passou por nós no caminho.
+      setBytesDoPdf(bytes);
 
       const data = await signatureService.verifySignedPdfBySha256(computed);
       if (data) {
@@ -332,21 +370,6 @@ const PublicVerificationPage: React.FC = () => {
   // auditoria) de "não encontrado" (nenhum registro corresponde ao código).
   const isBlocked = hasResultState && !result?.valid && !!(result?.signer || result?.request);
   const isNotFound = hasResultState && !result?.valid && !isBlocked;
-  /**
-   * O tom da página mora num lugar só: o fio de 2,5 px no alto, o mesmo das
-   * telas de assinatura e com os mesmos significados. Quem já assinou um
-   * documento pelo Jurius chega aqui reconhecendo a cor antes de ler.
-   *
-   * Âmbar para "desativado pelo emissor" e vermelho para "não encontrado" NÃO
-   * é detalhe: o documento bloqueado existe e está válido — pintá-lo de
-   * vermelho insinuaria fraude onde há só uma preferência do escritório.
-   */
-  const tom: Tom =
-    loading || fileLoading ? 'trabalhando'
-    : isValid ? 'pronto'
-    : isBlocked ? 'espera'
-    : isNotFound ? 'problema'
-    : 'neutro';
 
   /*
     O QUE FOI CONSULTADO — e o recibo devolve isso, com o nome certo.
@@ -482,6 +505,49 @@ const PublicVerificationPage: React.FC = () => {
     !!codigoConsultado && normalizarCodigo(codigoDaPrevia) !== normalizarCodigo(codigoConsultado);
 
   /*
+    O REGISTRO EXISTIR NÃO BASTA.
+
+    Na consulta por código, a RPC prova que existe uma assinatura cadastrada.
+    A página só pode ficar verde depois de baixar o PDF que está no Storage
+    AGORA, calcular seu SHA-256 e compará-lo com o hash imutável do registro.
+  */
+  const statusIntegridade: StatusIntegridade | null = consultaDeEnvelope
+    ? null
+    : (integridadePdf?.status ?? (isValid ? 'checking' : null));
+  const arquivoViolado = statusIntegridade === 'mismatch';
+  const integridadeConferindo = statusIntegridade === 'checking';
+  const integridadeInconclusiva = statusIntegridade === 'unavailable';
+
+  /**
+   * O tom da página mora num lugar só. Divergência comprovada vence qualquer
+   * outro estado; indisponibilidade é âmbar, nunca verde.
+   */
+  const tom: Tom =
+    loading || fileLoading || integridadeConferindo ? 'trabalhando'
+    : arquivoViolado ? 'problema'
+    : isBlocked || integridadeInconclusiva ? 'espera'
+    : isValid ? 'pronto'
+    : isNotFound ? 'problema'
+    : 'neutro';
+
+  const rotuloDoResultado = consultaDeEnvelope
+    ? 'Envelope localizado'
+    : arquivoViolado
+      ? 'Documento violado'
+      : integridadeConferindo
+        ? 'Conferindo integridade'
+        : integridadeInconclusiva
+          ? 'Integridade inconclusiva'
+          : 'Documento íntegro';
+  const corDoResultado = arquivoViolado
+    ? '#b91c1c'
+    : integridadeInconclusiva
+      ? '#b45309'
+      : statusIntegridade === 'valid'
+        ? '#047857'
+        : '#c2410c';
+
+  /*
     BAIXAR O ARQUIVO DE ORIGEM.
 
     A página imprime o "SHA-256 do original" desde sempre, e até aqui não havia
@@ -553,36 +619,71 @@ const PublicVerificationPage: React.FC = () => {
     que ela não fique escrita na barra de endereço nem no histórico.
   */
   useEffect(() => {
-    if (!isValid || consultaDeEnvelope || !codigoDaPrevia) {
+    if (!isValid || consultaDeEnvelope) {
+      setIntegridadePdf(null);
       setPreviaUrl((anterior) => {
         if (anterior && anterior.startsWith('blob:')) URL.revokeObjectURL(anterior);
         return null;
       });
       return;
     }
+    const hashRegistrado = hashDoArquivoExibido || fileHash || null;
+    if (!codigoDaPrevia) {
+      setIntegridadePdf({ status: 'unavailable', hashRegistrado, hashAtual: null });
+      setPreviaFalhou(true);
+      return;
+    }
     let cancelado = false;
     let criada: string | null = null;
     setPreviaCarregando(true);
     setPreviaFalhou(false);
+    setIntegridadePdf({
+      status: hashRegistrado ? 'checking' : 'unavailable',
+      hashRegistrado,
+      hashAtual: null,
+    });
     (async () => {
       try {
         const url = await resolveSignedDocumentUrl(codigoDaPrevia, result?.signer?.signed_document_path);
         if (!url) throw new Error('sem url');
         let destino = url;
         try {
-          const res = await fetch(url);
+          const res = await fetch(urlSemCache(url), { cache: 'no-store' });
           if (!res.ok) throw new Error(`HTTP ${res.status}`);
           const blob = await res.blob();
           criada = URL.createObjectURL(blob);
           destino = criada;
-        } catch { /* servidor sem CORS para o GET: usa a própria URL assinada */ }
+          // Os mesmos bytes servem ao confronto do certificado — sem uma
+          // segunda descida do arquivo. Se o `fetch` falhar (sem CORS), a
+          // prévia ainda abre pela URL assinada e o confronto fica com um lado
+          // só, que é o que o cartão então diz.
+          const bytes = new Uint8Array(await blob.arrayBuffer());
+          const hashAtual = await calcularSha256Hex(bytes);
+          if (!cancelado) {
+            setBytesDoPdf((anterior) => anterior || bytes);
+            setIntegridadePdf({
+              status: conferirDocumento({ hashRegistrado, hashAtual }),
+              hashRegistrado,
+              hashAtual,
+            });
+          }
+        } catch {
+          // A prévia ainda pode abrir pela URL assinada, mas sem ler os bytes a
+          // página não tem autorização para anunciar integridade.
+          if (!cancelado) {
+            setIntegridadePdf({ status: 'unavailable', hashRegistrado, hashAtual: null });
+          }
+        }
         if (cancelado) {
           if (criada) URL.revokeObjectURL(criada);
           return;
         }
         setPreviaUrl(destino);
       } catch {
-        if (!cancelado) setPreviaFalhou(true);
+        if (!cancelado) {
+          setPreviaFalhou(true);
+          setIntegridadePdf({ status: 'unavailable', hashRegistrado, hashAtual: null });
+        }
       } finally {
         if (!cancelado) setPreviaCarregando(false);
       }
@@ -592,7 +693,35 @@ const PublicVerificationPage: React.FC = () => {
       if (criada) URL.revokeObjectURL(criada);
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [isValid, consultaDeEnvelope, codigoDaPrevia]);
+  }, [isValid, consultaDeEnvelope, codigoDaPrevia, hashDoArquivoExibido, fileHash]);
+
+  /*
+    O CONFRONTO DOS CERTIFICADOS.
+
+    De um lado o certificado que este servidor publica; do outro, o que viaja
+    dentro do PKCS#7 do PDF assinado. As duas impressões digitais são
+    calculadas AQUI, no navegador de quem confere — não chegam prontas de uma
+    resposta nossa, que é justamente o que tornaria o confronto inútil.
+
+    Roda de novo quando os bytes do PDF aparecem: o certificado do servidor já
+    veio, e é a chegada do arquivo que fecha o par.
+  */
+  useEffect(() => {
+    // Sem selo não há o que confrontar — e envelope anterior a 02/09/2026 não
+    // tem selo. Baixar o certificado ali seria pedir um arquivo para não usar.
+    if (!isValid || (result?.selo?.selados ?? 0) <= 0) { setConfronto(null); return; }
+    let cancelado = false;
+    (async () => {
+      let pem: string | null = null;
+      try {
+        const res = await fetch(SELO_URL_DO_CERTIFICADO, { cache: 'force-cache' });
+        if (res.ok) pem = await res.text();
+      } catch { /* sem o arquivo público o cartão cai na constante */ }
+      const montado = await montarConfronto(pem, bytesDoPdf);
+      if (!cancelado) setConfronto(montado);
+    })();
+    return () => { cancelado = true; };
+  }, [isValid, bytesDoPdf, result?.selo?.selados]);
 
   /** As linhas do recibo — as mesmas que o signatário guardou no comprovante. */
   const linhasDoRecibo = (
@@ -681,9 +810,9 @@ const PublicVerificationPage: React.FC = () => {
           <div style={{ ...sobe(0, 0.5) }}>
             <span style={{
               display: 'block', fontSize: 10, fontWeight: 700, letterSpacing: '.18em',
-              textTransform: 'uppercase', color: '#c2410c',
+              textTransform: 'uppercase', color: corDoResultado,
             }}>
-              Documento conferido
+              {rotuloDoResultado}
             </span>
             <h1 style={{
               margin: '7px 0 0', fontSize: 30, fontWeight: 700, letterSpacing: '-1px',
@@ -737,10 +866,42 @@ const PublicVerificationPage: React.FC = () => {
             <div className="ap-dossie-meio" style={sobe(2)}>
               <FaixaDaContagem texto={contagem.texto} completo={contagem.completo} />
 
+              {arquivoViolado && (
+                <Tarja tom="problema" style={{ marginTop: 9 }}>
+                  <span>
+                    <strong>O arquivo armazenado foi alterado depois da assinatura.</strong>{' '}
+                    O SHA-256 atual não corresponde ao registro. Não aceite nem distribua este PDF.
+                    {integridadePdf?.hashRegistrado && (
+                      <code style={{ display: 'block', marginTop: 8, overflowWrap: 'anywhere' }}>
+                        Registrado: {integridadePdf.hashRegistrado}
+                      </code>
+                    )}
+                    {integridadePdf?.hashAtual && (
+                      <code style={{ display: 'block', marginTop: 3, overflowWrap: 'anywhere' }}>
+                        Encontrado: {integridadePdf.hashAtual}
+                      </code>
+                    )}
+                  </span>
+                </Tarja>
+              )}
+
+              {integridadeConferindo && (
+                <Tarja tom="neutro" style={{ marginTop: 9 }}>
+                  Calculando a impressão digital do PDF armazenado…
+                </Tarja>
+              )}
+
+              {integridadeInconclusiva && (
+                <Tarja tom="atencao" style={{ marginTop: 9 }}>
+                  Não foi possível conferir os bytes do PDF armazenado. O registro foi localizado,
+                  mas a integridade do arquivo permanece inconclusiva.
+                </Tarja>
+              )}
+
               {/* A comparação que sustenta a validação por arquivo. Só existe
                   quando houve arquivo — na consulta por código nada foi
                   comparado, e a página não pode insinuar que foi. */}
-              {verifiedByUploadedFile && (
+              {verifiedByUploadedFile && statusIntegridade === 'valid' && (
                 <Tarja tom="pronto" style={{ marginTop: 9 }}>
                   A impressão digital do arquivo que você enviou é idêntica à do registro. Byte a
                   byte, é o mesmo PDF que foi assinado.
@@ -760,7 +921,7 @@ const PublicVerificationPage: React.FC = () => {
                 )}
                 {!consultaDeEnvelope && (hashDoArquivoExibido || fileHash) && (
                   <ChipDeCodigo
-                    rotulo="SHA-256 do PDF assinado"
+                    rotulo="SHA-256 registrado do PDF"
                     valor={hashDoArquivoExibido || fileHash}
                     copiado={copiado === 'sha-assinado'}
                     aoCopiar={() => { void copiar(hashDoArquivoExibido || fileHash, 'sha-assinado'); }}
@@ -811,6 +972,9 @@ const PublicVerificationPage: React.FC = () => {
                   total={result.selo?.total ?? 0}
                   selados={result.selo?.selados ?? 0}
                   impressao={SELO_IMPRESSAO_DIGITAL}
+                  confronto={confronto}
+                  integridade={integridadePdf}
+                  urlDoCertificado={SELO_URL_DO_CERTIFICADO}
                 />
               )}
 

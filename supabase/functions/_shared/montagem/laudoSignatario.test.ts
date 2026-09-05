@@ -1,6 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {
+  AMPARO_LEGAL_DO_SELO,
   ROTULOS_MONOESPACADOS,
   TEXTO_DO_SELO_DE_INTEGRIDADE,
   fichaDoSignatario,
@@ -76,6 +77,30 @@ test('o selo cita o amparo legal e NÃO deprecia o próprio certificado', () => 
   assert.ok(t.includes('MP 2.200-2/2001'), 'o amparo legal tem de estar escrito');
   assert.ok(t.includes('STJ'));
   assert.ok(!/ICP[- ]?Brasil/i.test(t), 'não pode se comparar desfavoravelmente');
+});
+
+test('o amparo legal é CITAÇÃO literal do § 2º, não paráfrase', () => {
+  // A força da citação está em ser o texto da lei, palavra por palavra: quem
+  // recebe o documento confere contra o Planalto sem depender de nós. Reescrever
+  // "com as próprias palavras" transformaria prova em opinião.
+  const t = AMPARO_LEGAL_DO_SELO.texto;
+  assert.ok(t.startsWith('O disposto nesta Medida Provisória não obsta'));
+  assert.ok(t.includes('inclusive os que utilizem certificados não emitidos pela ICP-Brasil'));
+  assert.ok(t.endsWith('aceito pela pessoa a quem for oposto o documento.'));
+  assert.ok(/2\.200-2\/2001/.test(AMPARO_LEGAL_DO_SELO.fonte), 'a fonte tem de ser conferível');
+  assert.ok(/Art\. 10/.test(AMPARO_LEGAL_DO_SELO.fonte));
+});
+
+test('"ICP-Brasil" só aparece na boca da lei, nunca na nossa', () => {
+  // A divisão de trabalho entre os dois textos: o selo é NOSSA afirmação e não
+  // se compara desfavoravelmente; a citação é a LEI e é justamente ela quem
+  // pode dizer "certificados não emitidos pela ICP-Brasil" — ali a frase é
+  // fundamento, não desculpa.
+  assert.ok(!/ICP[- ]?Brasil/i.test(TEXTO_DO_SELO_DE_INTEGRIDADE));
+  assert.ok(/ICP-Brasil/.test(AMPARO_LEGAL_DO_SELO.texto));
+  // E a condição que a lei impõe tem de vir junto: sem ela a citação estaria
+  // recortada a nosso favor.
+  assert.ok(AMPARO_LEGAL_DO_SELO.texto.includes('desde que admitido pelas partes'));
 });
 
 test('a ficha aceita todos os campos preenchidos sem perder nenhum', () => {

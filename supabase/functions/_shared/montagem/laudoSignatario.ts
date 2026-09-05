@@ -102,6 +102,32 @@ export const TEXTO_DO_SELO_DE_INTEGRIDADE =
   + 'MP 2.200-2/2001 e do entendimento do STJ. Para conferir, abra o arquivo em um leitor de PDF '
   + 'ou use o código acima no endereço abaixo.';
 
+/**
+ * O AMPARO LEGAL, CITADO — e não parafraseado.
+ *
+ * O parágrafo do selo já dizia "válida nos termos da MP 2.200-2/2001". Isso é
+ * uma afirmação nossa sobre a lei; quem recebe o documento e quer contestar
+ * precisa ir procurar a lei para saber se a afirmação se sustenta. O § 2º do
+ * art. 10 é curto e é exatamente o dispositivo que ampara ESTE arquivo — um
+ * documento eletrônico assinado com certificado que não é da ICP-Brasil —,
+ * então ele vai transcrito, entre aspas, com a fonte.
+ *
+ * REPARE QUE A CITAÇÃO INVERTE O SINAL. A frase "não é ICP-Brasil" saiu do
+ * selo porque, dita por nós, deprecia. Dita pela lei, e com a condição que ela
+ * própria põe ("desde que admitido pelas partes como válido ou aceito pela
+ * pessoa a quem for oposto o documento"), a mesma informação vira fundamento:
+ * o signatário aceitou os termos aqui mesmo, e a trilha de auditoria deste
+ * laudo é a prova disso.
+ */
+export const AMPARO_LEGAL_DO_SELO = {
+  fonte: 'MP 2.200-2/2001 · Art. 10, § 2º',
+  texto:
+    'O disposto nesta Medida Provisória não obsta a utilização de outro meio de comprovação '
+    + 'da autoria e integridade de documentos em forma eletrônica, inclusive os que utilizem '
+    + 'certificados não emitidos pela ICP-Brasil, desde que admitido pelas partes como válido '
+    + 'ou aceito pela pessoa a quem for oposto o documento.',
+} as const;
+
 export type ConteudoDoSignatario = {
   nome: string;
   ficha: DadoDoSignatario[];
@@ -252,7 +278,10 @@ export function desenharPaginaDoSignatario(params: {
 
   // ── Bloco do certificado ───────────────────────────────────────────────
   const topoDoBloco = fotoY - 18;
-  const alturaDoBloco = 196;
+  // 190, e não os 196 originais: o bloco ganhou a citação do § 2º e perdeu o
+  // vazio que sobrava embaixo. O texto agora termina a ~156 do topo, e o QR
+  // (132 + molduras = 162) continua centrado com folga.
+  const alturaDoBloco = 190;
   const larguraDoBloco = L - lm * 2;
 
   const cbBorda = rgb(0.86, 0.89, 0.93);
@@ -364,6 +393,16 @@ export function desenharPaginaDoSignatario(params: {
   for (const linha of quebrarTexto(TEXTO_DO_SELO_DE_INTEGRIDADE, helvetica, 5.5, larguraDoTexto)) {
     cy -= 8;
     pagina.drawText(linha, { x: tx, y: cy, size: 5.5, font: helvetica, color: cbMudo });
+  }
+
+  // O dispositivo, transcrito. Vem depois do selo porque é ele que sustenta o
+  // que o selo acabou de afirmar — e antes da URL, que é o passo seguinte de
+  // quem, lendo isto, resolve conferir.
+  cy -= 11;
+  pagina.drawText(AMPARO_LEGAL_DO_SELO.fonte, { x: tx, y: cy, size: 5.5, font: helveticaBold, color: cbSuave });
+  for (const linha of quebrarTexto(`\u201C${AMPARO_LEGAL_DO_SELO.texto}\u201D`, helvetica, 5, larguraDoTexto)) {
+    cy -= 7;
+    pagina.drawText(linha, { x: tx, y: cy, size: 5, font: helvetica, color: cbMudo });
   }
 
   if (conteudo.urlDeVerificacao) {

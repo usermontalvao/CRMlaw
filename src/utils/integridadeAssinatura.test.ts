@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import { createHash } from 'node:crypto';
 import { readFileSync } from 'node:fs';
 import {
+  calcularSha256Hex,
   conferirDocumento,
   identificadoresDoPdf,
   larguraDisponivelParaProtocolo,
@@ -38,6 +39,14 @@ const DOCUMENTOS = [DOC_PRINCIPAL, ANEXO_0, ANEXO_1];
 
 const sha256 = (bytes: Uint8Array): string =>
   createHash('sha256').update(bytes).digest('hex').toUpperCase();
+
+test('o SHA-256 calculado no navegador descreve exatamente os bytes recebidos', async () => {
+  const bytes = new TextEncoder().encode('abc');
+  assert.equal(
+    await calcularSha256Hex(bytes),
+    'BA7816BF8F01CFEA414140DE5DAE2223B00361A396177A9CB410FF61F20015AD',
+  );
+});
 
 // ═══════════════════════════════════════════════════════════════════════════
 // 1 e 2 — cada documento responde pelo SEU hash
@@ -366,6 +375,25 @@ test('a Edge Function de finalização nunca sobrescreve hash divergente', () =>
     false,
     'voltou a sobrescrever o hash já registrado',
   );
+});
+
+test('a página pública recalcula o hash do PDF servido antes de ficar verde', () => {
+  const pagina = readFileSync(
+    new URL('../components/PublicVerificationPage.tsx', import.meta.url),
+    'utf8',
+  );
+  const selo = readFileSync(
+    new URL('../components/publicSigning/dossie.tsx', import.meta.url),
+    'utf8',
+  );
+
+  assert.ok(pagina.includes("fetch(urlSemCache(url), { cache: 'no-store' })"));
+  assert.ok(pagina.includes('calcularSha256Hex(bytes)'));
+  assert.ok(pagina.includes('conferirDocumento({ hashRegistrado, hashAtual })'));
+  assert.ok(pagina.includes("? 'Documento violado'"));
+  assert.ok(pagina.includes('O SHA-256 atual não corresponde ao registro'));
+  assert.ok(selo.includes('Documento violado — conteúdo alterado'));
+  assert.ok(selo.includes('Os certificados conferem, mas o arquivo não.'));
 });
 
 // ═══════════════════════════════════════════════════════════════════════════

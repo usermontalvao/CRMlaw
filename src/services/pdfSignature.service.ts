@@ -1920,7 +1920,9 @@ class PdfSignatureService {
       // largura limitada pela borda do QR. Acrescentar uma linha aqui deixou de
       // exigir recontar todos os offsets.
       const legalTopY  = photoY - 18;
-      const verBlockH  = 196;
+      // 190, e não os 196 de antes: o bloco ganhou a citação do § 2º da MP e
+      // perdeu o vazio que sobrava embaixo. Espelha `laudoSignatario.ts`.
+      const verBlockH  = 190;
       const verBlockW  = pageWidth - lm * 2;
       const verBlockY  = legalTopY - verBlockH;
 
@@ -2049,6 +2051,30 @@ class PdfSignatureService {
       for (const linha of wrapText(seloTexto, helvetica, 5.5, cbTextW)) {
         cy -= 8;
         page.drawText(linha, { x: vtx, y: cy, size: 5.5, font: helvetica, color: cbMuted });
+      }
+
+      // ── O AMPARO LEGAL, CITADO ────────────────────────────────────────────
+      // O parágrafo acima afirma "válida nos termos da MP 2.200-2/2001". Isso
+      // é uma afirmação NOSSA sobre a lei; quem recebe o documento e quer
+      // contestar teria de ir procurar o dispositivo para saber se ela se
+      // sustenta. O § 2º do art. 10 é curto e é exatamente o que ampara este
+      // arquivo — documento eletrônico assinado com certificado fora da
+      // ICP-Brasil —, então vai transcrito, entre aspas, com a fonte.
+      //
+      // E repare que a citação INVERTE o sinal: dita por nós, "não é
+      // ICP-Brasil" deprecia; dita pela lei, com a condição que ela própria
+      // impõe ("desde que admitido pelas partes"), a mesma informação vira
+      // fundamento — e o aceite dos termos está na trilha deste laudo.
+      const amparoFonte = 'MP 2.200-2/2001 · Art. 10, § 2º';
+      const amparoTexto = '\u201CO disposto nesta Medida Provisória não obsta a utilização de outro meio de comprovação '
+        + 'da autoria e integridade de documentos em forma eletrônica, inclusive os que utilizem '
+        + 'certificados não emitidos pela ICP-Brasil, desde que admitido pelas partes como válido '
+        + 'ou aceito pela pessoa a quem for oposto o documento.\u201D';
+      cy -= 11;
+      page.drawText(amparoFonte, { x: vtx, y: cy, size: 5.5, font: helveticaBold, color: cbSoft });
+      for (const linha of wrapText(amparoTexto, helvetica, 5, cbTextW)) {
+        cy -= 7;
+        page.drawText(linha, { x: vtx, y: cy, size: 5, font: helvetica, color: cbMuted });
       }
 
       // Verification URL

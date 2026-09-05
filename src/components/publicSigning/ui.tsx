@@ -776,12 +776,13 @@ export const AcaoSecundaria: React.FC<{
 // ─────────────────────────────────────────────────────────────────────────────
 // Tarja de aviso. Existe para uma frase só: "não saia desta página".
 // ─────────────────────────────────────────────────────────────────────────────
-export const Tarja: React.FC<{ tom: 'atencao' | 'pronto' | 'neutro'; children: React.ReactNode; style?: React.CSSProperties }> = ({
+export const Tarja: React.FC<{ tom: 'atencao' | 'pronto' | 'problema' | 'neutro'; children: React.ReactNode; style?: React.CSSProperties }> = ({
   tom, children, style,
 }) => {
   const cores = {
     atencao: { fundo: '#fffbeb', borda: '#fde68a', tinta: '#92400e' },
     pronto: { fundo: '#f0fdf4', borda: '#bbf7d0', tinta: VERDE },
+    problema: { fundo: '#fef2f2', borda: '#fecaca', tinta: '#b91c1c' },
     neutro: { fundo: '#f8fafc', borda: '#e2e8f0', tinta: TINTA_2 },
   }[tom];
 
